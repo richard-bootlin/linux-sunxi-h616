@@ -2350,8 +2350,12 @@ static void sunxi_nfc_remove(struct platform_device *pdev)
 		dma_release_channel(nfc->dmac);
 }
 
-static const u8 sunxi_ecc_strengths[] = {
-	16, 24, 28, 32, 40, 48, 56, 60, 64, 68, 72, 76, 80
+static const u8 sunxi_ecc_strengths_a10[] = {
+	16, 24, 28, 32, 40, 48, 56, 60, 64
+};
+
+static const u8 sunxi_ecc_strengths_h6[] = {
+	16, 24, 28, 32, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80
 };
 
 static const struct sunxi_nfc_caps sunxi_nfc_a10_caps = {
@@ -2367,8 +2371,8 @@ static const struct sunxi_nfc_caps sunxi_nfc_a10_caps = {
 	.ecc_mode_mask = GENMASK(15, 12),
 	.ecc_err_mask = GENMASK(15, 0),
 	.pat_found_mask = GENMASK(31, 16),
-	.ecc_strengths = sunxi_ecc_strengths,
-	.nstrengths = 9,
+	.ecc_strengths = sunxi_ecc_strengths_a10,
+	.nstrengths = ARRAY_SIZE(sunxi_ecc_strengths_a10),
 	.max_ecc_steps = 16,
 	.sram_size = 1024,
 };
@@ -2387,8 +2391,8 @@ static const struct sunxi_nfc_caps sunxi_nfc_a23_caps = {
 	.ecc_mode_mask = GENMASK(15, 0),
 	.ecc_err_mask = GENMASK(15, 0),
 	.pat_found_mask = GENMASK(31, 16),
-	.ecc_strengths = sunxi_ecc_strengths,
-	.nstrengths = 9,
+	.ecc_strengths = sunxi_ecc_strengths_a10,
+	.nstrengths = ARRAY_SIZE(sunxi_ecc_strengths_a10),
 	.max_ecc_steps = 16,
 	.sram_size = 1024,
 };
@@ -2407,8 +2411,8 @@ static const struct sunxi_nfc_caps sunxi_nfc_h616_caps = {
 	.ecc_mode_mask = GENMASK(15, 8),
 	.ecc_err_mask = GENMASK(31, 0),
 	.pat_found_mask = GENMASK(31, 0),
-	.ecc_strengths = sunxi_ecc_strengths,
-	.nstrengths = 13,
+	.ecc_strengths = sunxi_ecc_strengths_h6,
+	.nstrengths = ARRAY_SIZE(sunxi_ecc_strengths_h6),
 	.max_ecc_steps = 32,
 	.sram_size = 8192,
 };
