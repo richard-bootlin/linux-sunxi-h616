@@ -470,4 +470,10 @@ config XILINX_GMII2RGMII
 	  the Reduced Gigabit Media Independent Interface(RGMII) between
 	  Ethernet physical media devices and the Gigabit Ethernet controller.
 
+config XPOWERS_AC300_PHY
+	tristate "X-Powers AC300 PHY"
+	help
+	  X-Powers AC300 Fast Ethernet PHY, found in Allwinner H616 SoC
+	  for instance.
+
 endif # PHYLIB
