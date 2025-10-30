@@ -1116,6 +1116,24 @@ out_put_node:
 	return regmap;
 }
 
+static int sun8i_dwmac_init_ac300_optional(struct device *dev)
+{
+	struct device_node *ac300_cfg;
+	struct phy_device *config_phy;
+
+	ac300_cfg = of_parse_phandle(dev->of_node, "allwinner,ac300-config", 0);
+	if (!ac300_cfg)
+		return 0;
+
+	config_phy = of_phy_find_device(ac300_cfg);
+	of_node_put(ac300_cfg);
+
+	if (config_phy)
+		return phy_init_hw(config_phy);
+
+	return -1;
+}
+
 static int sun8i_dwmac_probe(struct platform_device *pdev)
 {
 	struct plat_stmmacenet_data *plat_dat;
@@ -1225,6 +1243,13 @@ static int sun8i_dwmac_probe(struct platform_device *pdev)
 	 * as reset.
 	 */
 	pm_runtime_get_sync(&pdev->dev);
+
+	ret = sun8i_dwmac_init_ac300_optional(&pdev->dev);
+	if (ret) {
+		dev_err_probe(&pdev->dev, ret,
+			      "Failed to initialize AC300 EPHY\n");
+		goto dwmac_remove;
+	}
 
 	/* The mux must be registered after parent MDIO
 	 * so after stmmac_dvr_probe()
