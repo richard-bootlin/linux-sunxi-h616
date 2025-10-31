@@ -310,8 +310,8 @@ static int sun20i_pwm_probe(struct platform_device *pdev)
 		npwm = 8; /* Default value */
 
 	if (npwm > 16) {
-		dev_info(&pdev->dev, "Limiting number of PWM lines from %u to 16", npwm);
-		npwm = 16;
+		dev_info(&pdev->dev, "PWM lines number out of range (%u > 16)", npwm);
+		return -EINVAL;
 	}
 
 	chip = devm_pwmchip_alloc(&pdev->dev, npwm, sizeof(*sun20i_chip));
