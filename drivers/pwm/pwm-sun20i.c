@@ -31,15 +31,18 @@
 #define PWM_CLK_GATE_BYPASS(chan)	BIT((chan) + 16)
 #define PWM_CLK_GATE_GATING(chan)	BIT(chan)
 
-#define PWM_ENABLE			0x80
+#define PWM_ENABLE(chip)		(chip->data.enable_reg)
+#define PWM_SUN20I_ENABLE		0x80
+
 #define PWM_ENABLE_EN(chan)		BIT(chan)
 
-#define PWM_CTL(chan)			(0x100 + (chan) * 0x20)
+#define PWM_SUN20I_CTL			0x100
+#define PWM_CTL(chip, chan)		(chip->data.ctl_reg + (chan) * 0x20)
 #define PWM_CTL_ACT_STA			BIT(8)
 #define PWM_CTL_PRESCAL_K		GENMASK(7, 0)
 #define PWM_CTL_PRESCAL_K_MAX		field_max(PWM_CTL_PRESCAL_K)
 
-#define PWM_PERIOD(chan)		(0x104 + (chan) * 0x20)
+#define PWM_PERIOD(chip, chan)		(chip->data.ctl_reg + 4 + (chan) * 0x20)
 #define PWM_PERIOD_ENTIRE_CYCLE		GENMASK(31, 16)
 #define PWM_PERIOD_ACT_CYCLE		GENMASK(15, 0)
 
@@ -93,6 +96,11 @@
  */
 #define PWM_MAGIC			(255 * 65537 + 2 * 65536 + 1)
 #define PWM_DIV_CONST			65537
+
+struct sun20i_pwm_data {
+	unsigned int enable_reg;
+	unsigned int ctl_reg;
+};
 
 struct sun20i_pwm_chip {
 	struct clk *clk_hosc, *clk_apb;
@@ -290,9 +298,18 @@ static const struct pwm_ops sun20i_pwm_ops = {
 	.get_state = sun20i_pwm_get_state,
 };
 
+static const struct sun20i_pwm_data sun20i_d1_pwm_data = {
+	.enable_reg = PWM_SUN20I_ENABLE,
+	.ctl_reg = PWM_SUN20I_CTL,
+};
+
 static const struct of_device_id sun20i_pwm_dt_ids[] = {
-	{ .compatible = "allwinner,sun20i-d1-pwm" },
-	{ }
+	{
+		.compatible = "allwinner,sun20i-d1-pwm",
+		.data = &sun20i_d1_pwm_data,
+	}, {
+		/* sentinel */
+	}
 };
 MODULE_DEVICE_TABLE(of, sun20i_pwm_dt_ids);
 
