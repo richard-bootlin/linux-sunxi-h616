@@ -305,7 +305,7 @@ static int sun20i_pwm_probe(struct platform_device *pdev)
 	u32 npwm;
 	int ret;
 
-	ret = of_property_read_u32(pdev->dev.of_node, "allwinner,npwms", &npwm);
+	ret = of_property_read_u32(pdev->dev.of_node, "npwms", &npwm);
 	if (ret < 0)
 		npwm = 8; /* Default value */
 
