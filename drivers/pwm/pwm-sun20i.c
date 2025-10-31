@@ -6,7 +6,7 @@
  * - When the parameters change, the current running period is not completed
  *   and new settings are applied immediately.
  * - The PWM output goes to a HIGH-Z state when the channel is disabled.
- * - Changing the clock configuration (SUN20I_PWM_CLK_CFG)
+ * - Changing the clock configuration (PWM_CLK_CFG)
  *   may cause a brief output glitch.
  *
  * Copyright (c) 2023 Aleksandr Shubin <privatesub2@gmail.com>
@@ -22,40 +22,40 @@
 #include <linux/pwm.h>
 #include <linux/reset.h>
 
-#define SUN20I_PWM_CLK_CFG(pair)		(0x20 + ((pair) * 0x4))
-#define SUN20I_PWM_CLK_CFG_SRC			GENMASK(8, 7)
-#define SUN20I_PWM_CLK_CFG_DIV_M		GENMASK(3, 0)
-#define SUN20I_PWM_CLK_DIV_M_MAX		8
+#define PWM_CLK_CFG(pair)		(0x20 + ((pair) * 0x4))
+#define PWM_CLK_CFG_SRC			GENMASK(8, 7)
+#define PWM_CLK_CFG_DIV_M		GENMASK(3, 0)
+#define PWM_CLK_DIV_M_MAX		8
 
-#define SUN20I_PWM_CLK_GATE			0x40
-#define SUN20I_PWM_CLK_GATE_BYPASS(chan)	BIT((chan) + 16)
-#define SUN20I_PWM_CLK_GATE_GATING(chan)	BIT(chan)
+#define PWM_CLK_GATE			0x40
+#define PWM_CLK_GATE_BYPASS(chan)	BIT((chan) + 16)
+#define PWM_CLK_GATE_GATING(chan)	BIT(chan)
 
-#define SUN20I_PWM_ENABLE			0x80
-#define SUN20I_PWM_ENABLE_EN(chan)		BIT(chan)
+#define PWM_ENABLE			0x80
+#define PWM_ENABLE_EN(chan)		BIT(chan)
 
-#define SUN20I_PWM_CTL(chan)			(0x100 + (chan) * 0x20)
-#define SUN20I_PWM_CTL_ACT_STA			BIT(8)
-#define SUN20I_PWM_CTL_PRESCAL_K		GENMASK(7, 0)
-#define SUN20I_PWM_CTL_PRESCAL_K_MAX		field_max(SUN20I_PWM_CTL_PRESCAL_K)
+#define PWM_CTL(chan)			(0x100 + (chan) * 0x20)
+#define PWM_CTL_ACT_STA			BIT(8)
+#define PWM_CTL_PRESCAL_K		GENMASK(7, 0)
+#define PWM_CTL_PRESCAL_K_MAX		field_max(PWM_CTL_PRESCAL_K)
 
-#define SUN20I_PWM_PERIOD(chan)			(0x104 + (chan) * 0x20)
-#define SUN20I_PWM_PERIOD_ENTIRE_CYCLE		GENMASK(31, 16)
-#define SUN20I_PWM_PERIOD_ACT_CYCLE		GENMASK(15, 0)
+#define PWM_PERIOD(chan)		(0x104 + (chan) * 0x20)
+#define PWM_PERIOD_ENTIRE_CYCLE		GENMASK(31, 16)
+#define PWM_PERIOD_ACT_CYCLE		GENMASK(15, 0)
 
-#define SUN20I_PWM_PCNTR_SIZE			BIT(16)
+#define PWM_PCNTR_SIZE			BIT(16)
 
 /*
- * SUN20I_PWM_MAGIC is used to quickly compute the values of the clock dividers
- * div_m (SUN20I_PWM_CLK_CFG_DIV_M) & prescale_k (SUN20I_PWM_CTL_PRESCAL_K)
+ * PWM_MAGIC is used to quickly compute the values of the clock dividers
+ * div_m (PWM_CLK_CFG_DIV_M) & prescale_k (PWM_CTL_PRESCAL_K)
  * without using a loop. These dividers limit the # of cycles in a period
- * to SUN20I_PWM_PCNTR_SIZE (65536) by applying a scaling factor of
+ * to PWM_PCNTR_SIZE (65536) by applying a scaling factor of
  * 1/(div_m * (prescale_k + 1)) to the clock source.
  *
- * SUN20I_PWM_MAGIC is derived by solving for div_m and prescale_k
+ * PWM_MAGIC is derived by solving for div_m and prescale_k
  * such that for a given requested period,
  *
- * i) div_m is minimized for any prescale_k ≤ SUN20I_PWM_CTL_PRESCAL_K_MAX,
+ * i) div_m is minimized for any prescale_k ≤ PWM_CTL_PRESCAL_K_MAX,
  * ii) prescale_k is minimized.
  *
  * The derivation proceeds as follows, with val = # of cycles for requested
@@ -63,7 +63,7 @@
  *
  * for a given value of div_m we want the smallest prescale_k such that
  *
- * (val >> div_m) // (prescale_k + 1) ≤ 65536 (= SUN20I_PWM_PCNTR_SIZE)
+ * (val >> div_m) // (prescale_k + 1) ≤ 65536 (= PWM_PCNTR_SIZE)
  *
  * This is equivalent to:
  *
@@ -81,7 +81,7 @@
  * ((val >> div_m) - 65536) // 65537
  *
  * Now we pick the smallest div_m that satifies prescale_k ≤ 255
- * (i.e SUN20I_PWM_CTL_PRESCAL_K_MAX),
+ * (i.e PWM_CTL_PRESCAL_K_MAX),
  *
  * ((val >> div_m) - 65536) // 65537 ≤ 255
  * ⟺ (val >> div_m) - 65536 ≤ 255 * 65537 + 65536
@@ -91,8 +91,8 @@
  *
  * Suggested by Uwe Kleine-König
  */
-#define SUN20I_PWM_MAGIC			(255 * 65537 + 2 * 65536 + 1)
-#define SUN20I_PWM_DIV_CONST			65537
+#define PWM_MAGIC			(255 * 65537 + 2 * 65536 + 1)
+#define PWM_DIV_CONST			65537
 
 struct sun20i_pwm_chip {
 	struct clk *clk_hosc, *clk_apb;
@@ -126,33 +126,33 @@ static int sun20i_pwm_get_state(struct pwm_chip *chip,
 	u8 div_m;
 	u32 val;
 
-	val = sun20i_pwm_readl(sun20i_chip, SUN20I_PWM_CLK_CFG(pwm->hwpwm / 2));
-	div_m = FIELD_GET(SUN20I_PWM_CLK_CFG_DIV_M, val);
-	if (div_m > SUN20I_PWM_CLK_DIV_M_MAX)
-		div_m = SUN20I_PWM_CLK_DIV_M_MAX;
+	val = sun20i_pwm_readl(sun20i_chip, PWM_CLK_CFG(pwm->hwpwm / 2));
+	div_m = FIELD_GET(PWM_CLK_CFG_DIV_M, val);
+	if (div_m > PWM_CLK_DIV_M_MAX)
+		div_m = PWM_CLK_DIV_M_MAX;
 
 	/*
 	 * If CLK_CFG_SRC is 0, use the hosc clock;
 	 * otherwise (any nonzero value) use the APB clock.
 	 */
-	if (FIELD_GET(SUN20I_PWM_CLK_CFG_SRC, val) == 0)
+	if (FIELD_GET(PWM_CLK_CFG_SRC, val) == 0)
 		clk_rate = clk_get_rate(sun20i_chip->clk_hosc);
 	else
 		clk_rate = clk_get_rate(sun20i_chip->clk_apb);
 
-	val = sun20i_pwm_readl(sun20i_chip, SUN20I_PWM_CTL(pwm->hwpwm));
-	state->polarity = (SUN20I_PWM_CTL_ACT_STA & val) ?
+	val = sun20i_pwm_readl(sun20i_chip, PWM_CTL(pwm->hwpwm));
+	state->polarity = (PWM_CTL_ACT_STA & val) ?
 			   PWM_POLARITY_NORMAL : PWM_POLARITY_INVERSED;
 
-	prescale_k = FIELD_GET(SUN20I_PWM_CTL_PRESCAL_K, val) + 1;
+	prescale_k = FIELD_GET(PWM_CTL_PRESCAL_K, val) + 1;
 
-	val = sun20i_pwm_readl(sun20i_chip, SUN20I_PWM_ENABLE);
-	state->enabled = (SUN20I_PWM_ENABLE_EN(pwm->hwpwm) & val) ? true : false;
+	val = sun20i_pwm_readl(sun20i_chip, PWM_ENABLE);
+	state->enabled = (PWM_ENABLE_EN(pwm->hwpwm) & val) ? true : false;
 
-	val = sun20i_pwm_readl(sun20i_chip, SUN20I_PWM_PERIOD(pwm->hwpwm));
-	act_cycle = FIELD_GET(SUN20I_PWM_PERIOD_ACT_CYCLE, val);
+	val = sun20i_pwm_readl(sun20i_chip, PWM_PERIOD(pwm->hwpwm));
+	act_cycle = FIELD_GET(PWM_PERIOD_ACT_CYCLE, val);
 
-	ent_cycle = FIELD_GET(SUN20I_PWM_PERIOD_ENTIRE_CYCLE, val);
+	ent_cycle = FIELD_GET(PWM_PERIOD_ENTIRE_CYCLE, val);
 
 	/*
 	 * The duration of the active phase should not be longer
@@ -183,31 +183,31 @@ static int sun20i_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	u32 prescale_k, div_m;
 	bool use_bus_clk;
 
-	pwm_en = sun20i_pwm_readl(sun20i_chip, SUN20I_PWM_ENABLE);
-	clk_gate = sun20i_pwm_readl(sun20i_chip, SUN20I_PWM_CLK_GATE);
+	pwm_en = sun20i_pwm_readl(sun20i_chip, PWM_ENABLE);
+	clk_gate = sun20i_pwm_readl(sun20i_chip, PWM_CLK_GATE);
 
 	if (!state->enabled) {
 		if (state->enabled != pwm->state.enabled) {
-			clk_gate &= ~SUN20I_PWM_CLK_GATE_GATING(pwm->hwpwm);
-			pwm_en &= ~SUN20I_PWM_ENABLE_EN(pwm->hwpwm);
-			sun20i_pwm_writel(sun20i_chip, pwm_en, SUN20I_PWM_ENABLE);
-			sun20i_pwm_writel(sun20i_chip, clk_gate, SUN20I_PWM_CLK_GATE);
+			clk_gate &= ~PWM_CLK_GATE_GATING(pwm->hwpwm);
+			pwm_en &= ~PWM_ENABLE_EN(pwm->hwpwm);
+			sun20i_pwm_writel(sun20i_chip, pwm_en, PWM_ENABLE);
+			sun20i_pwm_writel(sun20i_chip, clk_gate, PWM_CLK_GATE);
 		}
 		return 0;
 	}
 
-	ctl = sun20i_pwm_readl(sun20i_chip, SUN20I_PWM_CTL(pwm->hwpwm));
-	clk_cfg = sun20i_pwm_readl(sun20i_chip, SUN20I_PWM_CLK_CFG(pwm->hwpwm / 2));
+	ctl = sun20i_pwm_readl(sun20i_chip, PWM_CTL(pwm->hwpwm));
+	clk_cfg = sun20i_pwm_readl(sun20i_chip, PWM_CLK_CFG(pwm->hwpwm / 2));
 	hosc_rate = clk_get_rate(sun20i_chip->clk_hosc);
 	bus_rate = clk_get_rate(sun20i_chip->clk_apb);
-	if (pwm_en & SUN20I_PWM_ENABLE_EN(pwm->hwpwm ^ 1)) {
+	if (pwm_en & PWM_ENABLE_EN(pwm->hwpwm ^ 1)) {
 		/* If the neighbor channel is enabled, use the current clock settings */
-		use_bus_clk = FIELD_GET(SUN20I_PWM_CLK_CFG_SRC, clk_cfg) != 0;
+		use_bus_clk = FIELD_GET(PWM_CLK_CFG_SRC, clk_cfg) != 0;
 		val = mul_u64_u64_div_u64(state->period,
 					  (use_bus_clk ? bus_rate : hosc_rate),
 					  NSEC_PER_SEC);
 
-		div_m = FIELD_GET(SUN20I_PWM_CLK_CFG_DIV_M, clk_cfg);
+		div_m = FIELD_GET(PWM_CLK_CFG_DIV_M, clk_cfg);
 	} else {
 		/*
 		 * Select the clock source based on the period.
@@ -226,22 +226,22 @@ static int sun20i_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 			if (val <= 1)
 				return -EINVAL;
 		}
-		div_m = fls(DIV_ROUND_DOWN_ULL(val, SUN20I_PWM_MAGIC));
-		if (div_m > SUN20I_PWM_CLK_DIV_M_MAX)
+		div_m = fls(DIV_ROUND_DOWN_ULL(val, PWM_MAGIC));
+		if (div_m > PWM_CLK_DIV_M_MAX)
 			return -EINVAL;
 
 		/* Set up the CLK_DIV_M and clock CLK_SRC */
-		clk_cfg = FIELD_PREP(SUN20I_PWM_CLK_CFG_DIV_M, div_m);
-		clk_cfg |= FIELD_PREP(SUN20I_PWM_CLK_CFG_SRC, use_bus_clk);
+		clk_cfg = FIELD_PREP(PWM_CLK_CFG_DIV_M, div_m);
+		clk_cfg |= FIELD_PREP(PWM_CLK_CFG_SRC, use_bus_clk);
 
-		sun20i_pwm_writel(sun20i_chip, clk_cfg, SUN20I_PWM_CLK_CFG(pwm->hwpwm / 2));
+		sun20i_pwm_writel(sun20i_chip, clk_cfg, PWM_CLK_CFG(pwm->hwpwm / 2));
 	}
 
 	/* Calculate prescale_k and determine the number of cycles for a full PWM period */
 	ent_cycle = val >> div_m;
-	prescale_k = DIV_ROUND_DOWN_ULL(ent_cycle, SUN20I_PWM_DIV_CONST);
-	if (prescale_k > SUN20I_PWM_CTL_PRESCAL_K_MAX)
-		prescale_k = SUN20I_PWM_CTL_PRESCAL_K_MAX;
+	prescale_k = DIV_ROUND_DOWN_ULL(ent_cycle, PWM_DIV_CONST);
+	if (prescale_k > PWM_CTL_PRESCAL_K_MAX)
+		prescale_k = PWM_CTL_PRESCAL_K_MAX;
 
 	do_div(ent_cycle, prescale_k + 1);
 
@@ -250,7 +250,7 @@ static int sun20i_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 		return -EINVAL;
 
 	/* For N cycles, PPRx.PWM_ENTIRE_CYCLE = (N-1) */
-	reg_period = FIELD_PREP(SUN20I_PWM_PERIOD_ENTIRE_CYCLE, ent_cycle - 1);
+	reg_period = FIELD_PREP(PWM_PERIOD_ENTIRE_CYCLE, ent_cycle - 1);
 
 	/* Calculate the active cycles (duty cycle) */
 	val = mul_u64_u64_div_u64(state->duty_cycle,
@@ -265,21 +265,21 @@ static int sun20i_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	 * T high-level = PWM0_PRESCALE_K / PWM01_CLK * PPR0.PWM_ACT_CYCLE
 	 * Duty-cycle = T high-level / T period
 	 */
-	reg_period |= FIELD_PREP(SUN20I_PWM_PERIOD_ACT_CYCLE, act_cycle);
-	sun20i_pwm_writel(sun20i_chip, reg_period, SUN20I_PWM_PERIOD(pwm->hwpwm));
+	reg_period |= FIELD_PREP(PWM_PERIOD_ACT_CYCLE, act_cycle);
+	sun20i_pwm_writel(sun20i_chip, reg_period, PWM_PERIOD(pwm->hwpwm));
 
-	ctl = FIELD_PREP(SUN20I_PWM_CTL_PRESCAL_K, prescale_k);
+	ctl = FIELD_PREP(PWM_CTL_PRESCAL_K, prescale_k);
 	if (state->polarity == PWM_POLARITY_NORMAL)
-		ctl |= SUN20I_PWM_CTL_ACT_STA;
+		ctl |= PWM_CTL_ACT_STA;
 
-	sun20i_pwm_writel(sun20i_chip, ctl, SUN20I_PWM_CTL(pwm->hwpwm));
+	sun20i_pwm_writel(sun20i_chip, ctl, PWM_CTL(pwm->hwpwm));
 
 	if (state->enabled != pwm->state.enabled) {
-		clk_gate &= ~SUN20I_PWM_CLK_GATE_BYPASS(pwm->hwpwm);
-		clk_gate |= SUN20I_PWM_CLK_GATE_GATING(pwm->hwpwm);
-		pwm_en |= SUN20I_PWM_ENABLE_EN(pwm->hwpwm);
-		sun20i_pwm_writel(sun20i_chip, pwm_en, SUN20I_PWM_ENABLE);
-		sun20i_pwm_writel(sun20i_chip, clk_gate, SUN20I_PWM_CLK_GATE);
+		clk_gate &= ~PWM_CLK_GATE_BYPASS(pwm->hwpwm);
+		clk_gate |= PWM_CLK_GATE_GATING(pwm->hwpwm);
+		pwm_en |= PWM_ENABLE_EN(pwm->hwpwm);
+		sun20i_pwm_writel(sun20i_chip, pwm_en, PWM_ENABLE);
+		sun20i_pwm_writel(sun20i_chip, clk_gate, PWM_CLK_GATE);
 	}
 
 	return 0;
