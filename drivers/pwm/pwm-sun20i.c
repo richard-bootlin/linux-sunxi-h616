@@ -31,18 +31,18 @@
 #define PWM_CLK_GATE_BYPASS(chan)	BIT((chan) + 16)
 #define PWM_CLK_GATE_GATING(chan)	BIT(chan)
 
-#define PWM_ENABLE(chip)		(chip->data.enable_reg)
+#define PWM_ENABLE(c)			(c->data->enable_reg)
 #define PWM_SUN20I_ENABLE		0x80
 
 #define PWM_ENABLE_EN(chan)		BIT(chan)
 
 #define PWM_SUN20I_CTL			0x100
-#define PWM_CTL(chip, chan)		(chip->data.ctl_reg + (chan) * 0x20)
+#define PWM_CTL(c, chan)		(c->data->ctl_reg + (chan) * 0x20)
 #define PWM_CTL_ACT_STA			BIT(8)
 #define PWM_CTL_PRESCAL_K		GENMASK(7, 0)
 #define PWM_CTL_PRESCAL_K_MAX		field_max(PWM_CTL_PRESCAL_K)
 
-#define PWM_PERIOD(chip, chan)		(chip->data.ctl_reg + 4 + (chan) * 0x20)
+#define PWM_PERIOD(c, chan)		(c->data->ctl_reg + 4 + (chan) * 0x20)
 #define PWM_PERIOD_ENTIRE_CYCLE		GENMASK(31, 16)
 #define PWM_PERIOD_ACT_CYCLE		GENMASK(15, 0)
 
@@ -105,6 +105,7 @@ struct sun20i_pwm_data {
 struct sun20i_pwm_chip {
 	struct clk *clk_hosc, *clk_apb;
 	void __iomem *base;
+	const struct sun20i_pwm_data *data;
 };
 
 static inline struct sun20i_pwm_chip *to_sun20i_pwm_chip(struct pwm_chip *chip)
@@ -148,16 +149,16 @@ static int sun20i_pwm_get_state(struct pwm_chip *chip,
 	else
 		clk_rate = clk_get_rate(sun20i_chip->clk_apb);
 
-	val = sun20i_pwm_readl(sun20i_chip, PWM_CTL(pwm->hwpwm));
+	val = sun20i_pwm_readl(sun20i_chip, PWM_CTL(sun20i_chip, pwm->hwpwm));
 	state->polarity = (PWM_CTL_ACT_STA & val) ?
 			   PWM_POLARITY_NORMAL : PWM_POLARITY_INVERSED;
 
 	prescale_k = FIELD_GET(PWM_CTL_PRESCAL_K, val) + 1;
 
-	val = sun20i_pwm_readl(sun20i_chip, PWM_ENABLE);
+	val = sun20i_pwm_readl(sun20i_chip, PWM_ENABLE(sun20i_chip));
 	state->enabled = (PWM_ENABLE_EN(pwm->hwpwm) & val) ? true : false;
 
-	val = sun20i_pwm_readl(sun20i_chip, PWM_PERIOD(pwm->hwpwm));
+	val = sun20i_pwm_readl(sun20i_chip, PWM_PERIOD(sun20i_chip, pwm->hwpwm));
 	act_cycle = FIELD_GET(PWM_PERIOD_ACT_CYCLE, val);
 
 	ent_cycle = FIELD_GET(PWM_PERIOD_ENTIRE_CYCLE, val);
@@ -191,20 +192,20 @@ static int sun20i_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	u32 prescale_k, div_m;
 	bool use_bus_clk;
 
-	pwm_en = sun20i_pwm_readl(sun20i_chip, PWM_ENABLE);
+	pwm_en = sun20i_pwm_readl(sun20i_chip, PWM_ENABLE(sun20i_chip));
 	clk_gate = sun20i_pwm_readl(sun20i_chip, PWM_CLK_GATE);
 
 	if (!state->enabled) {
 		if (state->enabled != pwm->state.enabled) {
 			clk_gate &= ~PWM_CLK_GATE_GATING(pwm->hwpwm);
 			pwm_en &= ~PWM_ENABLE_EN(pwm->hwpwm);
-			sun20i_pwm_writel(sun20i_chip, pwm_en, PWM_ENABLE);
+			sun20i_pwm_writel(sun20i_chip, pwm_en, PWM_ENABLE(sun20i_chip));
 			sun20i_pwm_writel(sun20i_chip, clk_gate, PWM_CLK_GATE);
 		}
 		return 0;
 	}
 
-	ctl = sun20i_pwm_readl(sun20i_chip, PWM_CTL(pwm->hwpwm));
+	ctl = sun20i_pwm_readl(sun20i_chip, PWM_CTL(sun20i_chip, pwm->hwpwm));
 	clk_cfg = sun20i_pwm_readl(sun20i_chip, PWM_CLK_CFG(pwm->hwpwm / 2));
 	hosc_rate = clk_get_rate(sun20i_chip->clk_hosc);
 	bus_rate = clk_get_rate(sun20i_chip->clk_apb);
@@ -274,19 +275,20 @@ static int sun20i_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 	 * Duty-cycle = T high-level / T period
 	 */
 	reg_period |= FIELD_PREP(PWM_PERIOD_ACT_CYCLE, act_cycle);
-	sun20i_pwm_writel(sun20i_chip, reg_period, PWM_PERIOD(pwm->hwpwm));
+	sun20i_pwm_writel(sun20i_chip, reg_period,
+			  PWM_PERIOD(sun20i_chip, pwm->hwpwm));
 
 	ctl = FIELD_PREP(PWM_CTL_PRESCAL_K, prescale_k);
 	if (state->polarity == PWM_POLARITY_NORMAL)
 		ctl |= PWM_CTL_ACT_STA;
 
-	sun20i_pwm_writel(sun20i_chip, ctl, PWM_CTL(pwm->hwpwm));
+	sun20i_pwm_writel(sun20i_chip, ctl, PWM_CTL(sun20i_chip, pwm->hwpwm));
 
 	if (state->enabled != pwm->state.enabled) {
 		clk_gate &= ~PWM_CLK_GATE_BYPASS(pwm->hwpwm);
 		clk_gate |= PWM_CLK_GATE_GATING(pwm->hwpwm);
 		pwm_en |= PWM_ENABLE_EN(pwm->hwpwm);
-		sun20i_pwm_writel(sun20i_chip, pwm_en, PWM_ENABLE);
+		sun20i_pwm_writel(sun20i_chip, pwm_en, PWM_ENABLE(sun20i_chip));
 		sun20i_pwm_writel(sun20i_chip, clk_gate, PWM_CLK_GATE);
 	}
 
@@ -317,6 +319,7 @@ static int sun20i_pwm_probe(struct platform_device *pdev)
 {
 	struct pwm_chip *chip;
 	struct sun20i_pwm_chip *sun20i_chip;
+	const struct sun20i_pwm_data *data;
 	struct clk *clk_bus;
 	struct reset_control *rst;
 	u32 npwm;
@@ -335,6 +338,12 @@ static int sun20i_pwm_probe(struct platform_device *pdev)
 	if (IS_ERR(chip))
 		return PTR_ERR(chip);
 	sun20i_chip = to_sun20i_pwm_chip(chip);
+
+	data = of_device_get_match_data(&pdev->dev);
+	if (!data)
+		return -ENODEV;
+
+	sun20i_chip->data = data;
 
 	sun20i_chip->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(sun20i_chip->base))
