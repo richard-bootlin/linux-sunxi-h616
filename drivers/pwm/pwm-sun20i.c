@@ -320,7 +320,6 @@ static int sun20i_pwm_probe(struct platform_device *pdev)
 	struct pwm_chip *chip;
 	struct sun20i_pwm_chip *sun20i_chip;
 	const struct sun20i_pwm_data *data;
-	struct clk *clk_bus;
 	struct reset_control *rst;
 	u32 npwm;
 	int ret;
@@ -348,34 +347,6 @@ static int sun20i_pwm_probe(struct platform_device *pdev)
 	sun20i_chip->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(sun20i_chip->base))
 		return PTR_ERR(sun20i_chip->base);
-
-	clk_bus = devm_clk_get_enabled(&pdev->dev, "bus");
-	if (IS_ERR(clk_bus))
-		return dev_err_probe(&pdev->dev, PTR_ERR(clk_bus),
-				     "Failed to get bus clock\n");
-
-	sun20i_chip->clk_hosc = devm_clk_get_enabled(&pdev->dev, "hosc");
-	if (IS_ERR(sun20i_chip->clk_hosc))
-		return dev_err_probe(&pdev->dev, PTR_ERR(sun20i_chip->clk_hosc),
-				     "Failed to get hosc clock\n");
-
-	ret = devm_clk_rate_exclusive_get(&pdev->dev, sun20i_chip->clk_hosc);
-	if (ret)
-		return dev_err_probe(&pdev->dev, ret,
-				     "Failed to get hosc exclusive rate\n");
-
-	sun20i_chip->clk_apb = devm_clk_get_enabled(&pdev->dev, "apb");
-	if (IS_ERR(sun20i_chip->clk_apb))
-		return dev_err_probe(&pdev->dev, PTR_ERR(sun20i_chip->clk_apb),
-				     "Failed to get apb clock\n");
-
-	ret = devm_clk_rate_exclusive_get(&pdev->dev, sun20i_chip->clk_apb);
-	if (ret)
-		return dev_err_probe(&pdev->dev, ret,
-				     "Failed to get apb exclusive rate\n");
-
-	if (clk_get_rate(sun20i_chip->clk_apb) <= clk_get_rate(sun20i_chip->clk_hosc))
-		dev_info(&pdev->dev, "APB clock must be greater than hosc clock");
 
 	rst = devm_reset_control_get_exclusive_deasserted(&pdev->dev, NULL);
 	if (IS_ERR(rst))
