@@ -84,25 +84,6 @@ struct ccu_div {
 	unsigned int		fixed_post_div;
 };
 
-#define SUNXI_CCU_DIV_TABLE_WITH_MUX_GATE(_struct, _name, _parents, _reg, \
-					  _table, _shift, _width,	\
-					  _muxshift, _muxwidth,		\
-					  _gate, _flags)		\
-	struct ccu_div _struct = {					\
-		.div		= _SUNXI_CCU_DIV_TABLE(_shift, _width,	\
-						       _table),		\
-		.enable		= _gate,				\
-		.mux	= _SUNXI_CCU_MUX(_muxshift, _muxwidth),		\
-		.common	= {						\
-			.reg		= _reg,				\
-			.hw.init	= CLK_HW_INIT_PARENTS(_name,	\
-							      _parents, \
-							      &ccu_div_ops, \
-							      _flags),	\
-		}							\
-	}
-
-
 #define SUNXI_CCU_DIV_TABLE_WITH_GATE(_struct, _name, _parent, _reg,	\
 				      _shift, _width,			\
 				      _table, _gate, _flags)		\
