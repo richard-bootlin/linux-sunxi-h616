@@ -5,6 +5,7 @@
 
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/clock/sun50i-h616-ccu.h>
+#include <dt-bindings/clock/sun50i-h616-pwmcc.h>
 #include <dt-bindings/clock/sun50i-h6-r-ccu.h>
 #include <dt-bindings/clock/sun6i-rtc.h>
 #include <dt-bindings/reset/sun50i-h616-ccu.h>
@@ -234,6 +235,27 @@
 			reg = <0x030090a0 0x20>;
 			interrupts = <GIC_SPI 50 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&osc24M>;
+		};
+
+		pwm: pwm@300a000 {
+			compatible = "allwinner,sun50i-h616-pwm", "syscon";
+			reg = <0x0300a000 0x400>;
+			clocks = <&pwm_clocks CLK_PWM01>,
+				 <&pwm_clocks CLK_PWM23>,
+				 <&pwm_clocks CLK_PWM45>;
+			resets = <&ccu RST_BUS_PWM>;
+			allwinner,npwms = <6>;
+			status = "disabled";
+			#pwm-cells = <0x3>;
+		};
+
+		pwm_clocks: clock@300a020 {
+			compatible = "allwinner,sun50i-h616-pwmcc";
+			syscon = <&pwm 0x20 0x10>;
+			clocks = <&ccu CLK_BUS_PWM>, <&osc24M>, <&ccu CLK_APB1>;
+			clock-names = "bus", "hosc", "apb";
+			#clock-cells = <1>;
+			#reset-cells = <1>;
 		};
 
 		pio: pinctrl@300b000 {
