@@ -44,7 +44,7 @@
 
 #define PWM_XY_CLK_CFG(pair)		(0x20 + ((pair) * 0x4))
 #define PWM_XY_CLK_CFG_SRC_SHIFT	7
-#define PWM_XY_CLK_CFG_SRC_MASK		3
+#define PWM_XY_CLK_CFG_SRC_MASK		1
 #define PWM_XY_CLK_CFG_GATE_BIT		4
 #define PWM_XY_CLK_CFG_BYPASS_BIT(chan) ((chan) % 2 + 5)
 #define PWM_XY_CLK_CFG_DIV_M_SHIFT	0
@@ -126,8 +126,8 @@ struct clk_divider rate_x_##_idx = {			\
 	static PWM_XY_GATE(_pair, _reg);		\
 	static PWM_XY_DIV(_pair, _reg)
 
-#define PWM_X_CLK(_idx)						\
-	static PWM_X_MUX(_idx, PWM_XY_CLK_CFG(_idx), _idx);	\
+#define PWM_X_CLK(_idx)							\
+	static PWM_X_MUX(_idx, PWM_XY_CLK_CFG((_idx) >> 1), _idx);	\
 	static PWM_X_DIV(_idx, PWM_CTL(_idx))
 
 #define REF_CLK_XY_SRC(_pair)						\
@@ -215,18 +215,18 @@ struct clk_pwm_driver_data {
 };
 
 static struct clk_pwm_data pwmcc_data[] = {
-	REF_CLK_XY_SRC(01),
-	REF_CLK_XY_SRC(23),
-	REF_CLK_XY_SRC(45),
-	REF_CLK_XY(01),
-	REF_CLK_XY(23),
-	REF_CLK_XY(45),
 	REF_CLK_X(0, 01),
 	REF_CLK_X(1, 01),
 	REF_CLK_X(2, 23),
 	REF_CLK_X(3, 23),
 	REF_CLK_X(4, 45),
 	REF_CLK_X(5, 45),
+	REF_CLK_XY(01),
+	REF_CLK_XY(23),
+	REF_CLK_XY(45),
+	REF_CLK_XY_SRC(01),
+	REF_CLK_XY_SRC(23),
+	REF_CLK_XY_SRC(45),
 	{ /* sentinel */ },
 };
 
