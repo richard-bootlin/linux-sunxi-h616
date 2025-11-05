@@ -151,8 +151,8 @@ struct clk_divider rate_x_##_idx = {			\
 	{								\
 		.name = "pwm-" #_idx,					\
 		.parent_names = (const char *[]){			\
-			"pwm-xy-clk-src-" #_pair,			\
-			"pwm-xy-clk-" #_pair				\
+			"pwm-xy-clk-" #_pair,				\
+			"pwm-xy-clk-src-" #_pair			\
 		},							\
 		.num_parents = 2,					\
 		.mux_hw = &mux_x_##_idx.hw,				\
