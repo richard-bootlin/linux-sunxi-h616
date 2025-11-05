@@ -126,11 +126,11 @@ struct clk_divider rate_x_##_idx = {			\
 	static PWM_XY_GATE(_idx, _reg);			\
 	static PWM_XY_DIV(_idx, _reg)
 
-#define PWM_X_CLK(_idx)				\
+#define PWM_X_CLK(_idx)						\
 	static PWM_X_MUX(_idx, PWM_XY_CLK_CFG(_idx), _idx);	\
 	static PWM_X_DIV(_idx, PWM_CTL(_idx))
 
-#define REF_CLK_XY_SRC(_name, _idx)						\
+#define REF_CLK_XY_SRC(_name, _idx)					\
 	{								\
 		.name = #_name,						\
 		.parent_names = (const char *[]){ "osc24M", "apb1" },	\
@@ -138,7 +138,7 @@ struct clk_divider rate_x_##_idx = {			\
 		.mux_hw = &mux_xy_##_idx.hw,				\
 	}
 
-#define REF_CLK_XY(_name, _idx, _parent)					\
+#define REF_CLK_XY(_name, _idx, _parent)				\
 	{								\
 		.name = #_name,						\
 		.parent_names = (const char *[]){ #_parent },		\
@@ -147,9 +147,9 @@ struct clk_divider rate_x_##_idx = {			\
 		.rate_hw = &rate_xy_##_idx.hw,				\
 	}
 
-#define REF_CLK_X(_name, _idx, _parent1, _parent2)				\
+#define REF_CLK_X(_name, _idx, _parent1, _parent2)			\
 	{								\
-		.name = #_idx,						\
+		.name = #_name,						\
 		.parent_names = (const char *[]){ #_parent1, #_parent2 }, \
 		.num_parents = 2,					\
 		.mux_hw = &mux_x_##_idx.hw,				\
@@ -212,18 +212,18 @@ struct clk_pwm_driver_data {
 };
 
 static struct clk_pwm_data pwmcc_data[] = {
-	REF_CLK_XY_SRC(pwm_xy_clk_src_01, 01),
-	REF_CLK_XY_SRC(pwm_xy_clk_src_23, 23),
-	REF_CLK_XY_SRC(pwm_xy_clk_src_45, 45),
-	REF_CLK_XY(pwm_xy_clk_01, 01, pwm_xy_clk_src_01),
-	REF_CLK_XY(pwm_xy_clk_23, 23, pwm_xy_clk_src_23),
-	REF_CLK_XY(pwm_xy_clk_45, 45, pwm_xy_clk_src_45),
-	REF_CLK_X(pwm_0, 0, pwm_xy_clk_src_01, pwm_xy_clk_01),
-	REF_CLK_X(pwm_1, 1, pwm_xy_clk_src_01, pwm_xy_clk_01),
-	REF_CLK_X(pwm_2, 2, pwm_xy_clk_src_23, pwm_xy_clk_23),
-	REF_CLK_X(pwm_3, 3, pwm_xy_clk_src_23, pwm_xy_clk_23),
-	REF_CLK_X(pwm_4, 4, pwm_xy_clk_src_45, pwm_xy_clk_45),
-	REF_CLK_X(pwm_5, 5, pwm_xy_clk_src_45, pwm_xy_clk_45),
+	REF_CLK_XY_SRC(pwm-xy-clk-src-01, 01),
+	REF_CLK_XY_SRC(pwm-xy-clk-src-23, 23),
+	REF_CLK_XY_SRC(pwm-xy-clk-src-45, 45),
+	REF_CLK_XY(pwm-xy-clk-01, 01, pwm-xy-clk-src_01),
+	REF_CLK_XY(pwm-xy-clk-23, 23, pwm-xy-clk-src_23),
+	REF_CLK_XY(pwm-xy-clk-45, 45, pwm-xy-clk-src_45),
+	REF_CLK_X(pwm-0, 0, pwm-xy-clk-src_01, pwm-xy-clk-01),
+	REF_CLK_X(pwm-1, 1, pwm-xy-clk-src_01, pwm-xy-clk-01),
+	REF_CLK_X(pwm-2, 2, pwm-xy-clk-src_23, pwm-xy-clk-23),
+	REF_CLK_X(pwm-3, 3, pwm-xy-clk-src_23, pwm-xy-clk-23),
+	REF_CLK_X(pwm-4, 4, pwm-xy-clk-src_45, pwm-xy-clk-45),
+	REF_CLK_X(pwm-5, 5, pwm-xy-clk-src_45, pwm-xy-clk-45),
 	{ /* sentinel */ },
 };
 
@@ -264,12 +264,13 @@ static int sun50i_h616_add_composite_clk(const struct clk_pwm_data *data,
 	}
 
 	if (data->rate_hw) {
-		struct clk_divider *rate = to_clk_divider(rate_hw);
+		struct clk_divider *rate;
 
 		rate_hw = data->rate_hw;
+		rate = to_clk_divider(rate_hw);
 		rate_ops = rate_hw->init->ops;
-		rate->reg = (u64)rate->reg + reg;
 		rate->lock = lock;
+		rate->reg = (u64)rate->reg + reg;
 
 		if (rate->table) {
 			const struct clk_div_table *clkt;
