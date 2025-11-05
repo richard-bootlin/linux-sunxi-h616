@@ -70,8 +70,8 @@ static const struct clk_div_table clk_table_xy_div[] = {
 	{ .val = 0, .div = 0, }, /* last entry */
 };
 
-#define PWM_XY_GATE(_idx, _reg)				\
-struct clk_gate gate_xy_##_idx = {			\
+#define PWM_XY_GATE(_pair, _reg)			\
+struct clk_gate gate_xy_##_pair = {			\
 	.reg = (void *)_reg,				\
 	.bit_idx = PWM_XY_CLK_CFG_GATE_BIT,		\
 	.hw.init = &(struct clk_init_data){		\
@@ -79,8 +79,8 @@ struct clk_gate gate_xy_##_idx = {			\
 	}						\
 };
 
-#define PWM_XY_SRC_MUX(_idx, _reg)			\
-struct clk_mux mux_xy_##_idx = {			\
+#define PWM_XY_SRC_MUX(_pair, _reg)			\
+struct clk_mux mux_xy_##_pair = {			\
 	.reg = (void *)_reg,				\
 	.shift = PWM_XY_CLK_CFG_SRC_SHIFT,		\
 	.mask = PWM_XY_CLK_CFG_SRC_MASK,		\
@@ -89,8 +89,8 @@ struct clk_mux mux_xy_##_idx = {			\
 	}						\
 };
 
-#define PWM_XY_DIV(_idx, _reg)				\
-struct clk_divider rate_xy_##_idx = {			\
+#define PWM_XY_DIV(_pair, _reg)				\
+struct clk_divider rate_xy_##_pair = {			\
 	.reg = (void *)_reg,				\
 	.shift = PWM_XY_CLK_CFG_DIV_M_SHIFT,		\
 	.table = clk_table_xy_div,			\
@@ -119,38 +119,41 @@ struct clk_divider rate_x_##_idx = {			\
 	}						\
 };
 
-#define PWM_XY_CLK_SRC(_idx, _reg)			\
-	static PWM_XY_SRC_MUX(_idx, _reg)
+#define PWM_XY_CLK_SRC(_pair, _reg)			\
+	static PWM_XY_SRC_MUX(_pair, _reg)
 
-#define PWM_XY_CLK(_idx, _reg)				\
-	static PWM_XY_GATE(_idx, _reg);			\
-	static PWM_XY_DIV(_idx, _reg)
+#define PWM_XY_CLK(_pair, _reg)				\
+	static PWM_XY_GATE(_pair, _reg);		\
+	static PWM_XY_DIV(_pair, _reg)
 
 #define PWM_X_CLK(_idx)						\
 	static PWM_X_MUX(_idx, PWM_XY_CLK_CFG(_idx), _idx);	\
 	static PWM_X_DIV(_idx, PWM_CTL(_idx))
 
-#define REF_CLK_XY_SRC(_name, _idx)					\
+#define REF_CLK_XY_SRC(_pair)						\
 	{								\
-		.name = #_name,						\
+		.name = "pwm-xy-clk-src-" #_pair,			\
 		.parent_names = (const char *[]){ "osc24M", "apb1" },	\
 		.num_parents = 2,					\
-		.mux_hw = &mux_xy_##_idx.hw,				\
+		.mux_hw = &mux_xy_##_pair.hw,				\
 	}
 
-#define REF_CLK_XY(_name, _idx, _parent)				\
+#define REF_CLK_XY(_pair)						\
 	{								\
-		.name = #_name,						\
-		.parent_names = (const char *[]){ #_parent },		\
+		.name = "pwm-xy-clk-" #_pair,				\
+		.parent_names = (const char *[]){ "pwm-xy-clk-src-" #_pair }, \
 		.num_parents = 1,					\
-		.gate_hw = &gate_xy_##_idx.hw,				\
-		.rate_hw = &rate_xy_##_idx.hw,				\
+		.gate_hw = &gate_xy_##_pair.hw,				\
+		.rate_hw = &rate_xy_##_pair.hw,				\
 	}
 
-#define REF_CLK_X(_name, _idx, _parent1, _parent2)			\
+#define REF_CLK_X(_idx, _pair)						\
 	{								\
-		.name = #_name,						\
-		.parent_names = (const char *[]){ #_parent1, #_parent2 }, \
+		.name = "pwm-" #_idx,					\
+		.parent_names = (const char *[]){			\
+			"pwm-xy-clk-src-" #_pair,			\
+			"pwm-xy-clk-" #_pair				\
+		},							\
 		.num_parents = 2,					\
 		.mux_hw = &mux_x_##_idx.hw,				\
 		.rate_hw = &rate_x_##_idx.hw,				\
@@ -212,18 +215,18 @@ struct clk_pwm_driver_data {
 };
 
 static struct clk_pwm_data pwmcc_data[] = {
-	REF_CLK_XY_SRC(pwm-xy-clk-src-01, 01),
-	REF_CLK_XY_SRC(pwm-xy-clk-src-23, 23),
-	REF_CLK_XY_SRC(pwm-xy-clk-src-45, 45),
-	REF_CLK_XY(pwm-xy-clk-01, 01, pwm-xy-clk-src_01),
-	REF_CLK_XY(pwm-xy-clk-23, 23, pwm-xy-clk-src_23),
-	REF_CLK_XY(pwm-xy-clk-45, 45, pwm-xy-clk-src_45),
-	REF_CLK_X(pwm-0, 0, pwm-xy-clk-src_01, pwm-xy-clk-01),
-	REF_CLK_X(pwm-1, 1, pwm-xy-clk-src_01, pwm-xy-clk-01),
-	REF_CLK_X(pwm-2, 2, pwm-xy-clk-src_23, pwm-xy-clk-23),
-	REF_CLK_X(pwm-3, 3, pwm-xy-clk-src_23, pwm-xy-clk-23),
-	REF_CLK_X(pwm-4, 4, pwm-xy-clk-src_45, pwm-xy-clk-45),
-	REF_CLK_X(pwm-5, 5, pwm-xy-clk-src_45, pwm-xy-clk-45),
+	REF_CLK_XY_SRC(01),
+	REF_CLK_XY_SRC(23),
+	REF_CLK_XY_SRC(45),
+	REF_CLK_XY(01),
+	REF_CLK_XY(23),
+	REF_CLK_XY(45),
+	REF_CLK_X(0, 01),
+	REF_CLK_X(1, 01),
+	REF_CLK_X(2, 23),
+	REF_CLK_X(3, 23),
+	REF_CLK_X(4, 45),
+	REF_CLK_X(5, 45),
 	{ /* sentinel */ },
 };
 
