@@ -132,7 +132,7 @@ struct clk_divider rate_x_##_idx = {			\
 
 #define REF_CLK_XY_SRC(_pair)						\
 	{								\
-		.name = "pwm-xy-clk-src-" #_pair,			\
+		.name = "pwm-xy-clk-src" #_pair,			\
 		.parent_names = (const char *[]){ "osc24M", "apb1" },	\
 		.num_parents = 2,					\
 		.mux_hw = &mux_xy_##_pair.hw,				\
@@ -140,8 +140,8 @@ struct clk_divider rate_x_##_idx = {			\
 
 #define REF_CLK_XY(_pair)						\
 	{								\
-		.name = "pwm-xy-clk-" #_pair,				\
-		.parent_names = (const char *[]){ "pwm-xy-clk-src-" #_pair }, \
+		.name = "pwm-xy-clk" #_pair,				\
+		.parent_names = (const char *[]){ "pwm-xy-clk-src" #_pair }, \
 		.num_parents = 1,					\
 		.gate_hw = &gate_xy_##_pair.hw,				\
 		.rate_hw = &rate_xy_##_pair.hw,				\
@@ -150,10 +150,10 @@ struct clk_divider rate_x_##_idx = {			\
 
 #define REF_CLK_X(_idx, _pair)						\
 	{								\
-		.name = "pwm-" #_idx,					\
+		.name = "pwm-clk" #_idx,				\
 		.parent_names = (const char *[]){			\
-			"pwm-xy-clk-" #_pair,				\
-			"pwm-xy-clk-src-" #_pair			\
+			"pwm-xy-clk" #_pair,				\
+			"pwm-xy-clk-src" #_pair				\
 		},							\
 		.num_parents = 2,					\
 		.mux_hw = &mux_x_##_idx.hw,				\
