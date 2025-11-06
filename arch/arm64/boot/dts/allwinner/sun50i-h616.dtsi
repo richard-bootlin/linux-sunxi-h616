@@ -238,24 +238,23 @@
 		};
 
 		pwm: pwm@300a000 {
-			compatible = "allwinner,sun50i-h616-pwm", "syscon";
+			compatible = "allwinner,sun50i-h616-pwm";
 			reg = <0x0300a000 0x400>;
-			clocks = <&pwm_clocks CLK_PWM01>,
-				 <&pwm_clocks CLK_PWM23>,
-				 <&pwm_clocks CLK_PWM45>;
+			clocks = <&pwm_clocks 1>, <&pwm_clocks 2>,
+				 <&pwm_clocks 3>, <&pwm_clocks 4>,
+				 <&pwm_clocks 5>;
+			clock-names = "pwm1", "pwm2", "pwm3", "pwm4", "pwm5";
 			resets = <&ccu RST_BUS_PWM>;
-			allwinner,npwms = <6>;
 			status = "disabled";
 			#pwm-cells = <0x3>;
 		};
 
-		pwm_clocks: clock@300a020 {
-			compatible = "allwinner,sun50i-h616-pwmcc";
-			syscon = <&pwm 0x20 0x10>;
+		pwm_clocks: clock@300a000 {
+			compatible = "allwinner,sun50i-h616-pwmcc", "syscon";
+			reg = <0x300a000 0x400>;
 			clocks = <&ccu CLK_BUS_PWM>, <&osc24M>, <&ccu CLK_APB1>;
 			clock-names = "bus", "hosc", "apb";
 			#clock-cells = <1>;
-			#reset-cells = <1>;
 		};
 
 		pio: pinctrl@300b000 {
