@@ -145,6 +145,7 @@ struct clk_divider rate_x_##_idx = {			\
 		.num_parents = 1,					\
 		.gate_hw = &gate_xy_##_pair.hw,				\
 		.rate_hw = &rate_xy_##_pair.hw,				\
+		.flags = CLK_SET_RATE_PARENT | CLK_SET_RATE_GATE,	\
 	}
 
 #define REF_CLK_X(_idx, _pair)						\
@@ -157,6 +158,7 @@ struct clk_divider rate_x_##_idx = {			\
 		.num_parents = 2,					\
 		.mux_hw = &mux_x_##_idx.hw,				\
 		.rate_hw = &rate_x_##_idx.hw,				\
+		.flags = CLK_SET_RATE_PARENT | CLK_SET_RATE_GATE,	\
 	}
 
 /*
@@ -169,7 +171,6 @@ struct clk_divider rate_x_##_idx = {			\
 PWM_XY_CLK_SRC(01, PWM_XY_CLK_CFG(0));
 PWM_XY_CLK_SRC(23, PWM_XY_CLK_CFG(1));
 PWM_XY_CLK_SRC(45, PWM_XY_CLK_CFG(2));
-
 
 /*
  * Clocks obtained after the 1st div
@@ -206,6 +207,7 @@ struct clk_pwm_data {
 	struct clk_hw *mux_hw;
 	struct clk_hw *rate_hw;
 	struct clk_hw *gate_hw;
+	unsigned long flags;
 };
 
 struct clk_pwm_driver_data {
@@ -287,7 +289,7 @@ static int sun50i_h616_add_composite_clk(const struct clk_pwm_data *data,
 	*hw = clk_hw_register_composite(dev, data->name, data->parent_names,
 					data->num_parents, mux_hw,
 					mux_ops, rate_hw, rate_ops,
-					gate_hw, gate_ops, 0);
+					gate_hw, gate_ops, data->flags);
 
 	return PTR_ERR_OR_ZERO(*hw);
 }
