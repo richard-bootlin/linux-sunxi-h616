@@ -355,8 +355,8 @@ static int h616_add_composite_clk(const struct clk_pwm_data *data,
 	return PTR_ERR_OR_ZERO(*hw);
 }
 
-static int h616_pwmcc_register(struct platform_device *pdev,
-			       struct h616_pwm_chip *pwm)
+static int h616_pwm_init_clocks(struct platform_device *pdev,
+				struct h616_pwm_chip *pwm)
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct clk_pwm_pdata *pdata;
@@ -384,25 +384,22 @@ static int h616_pwmcc_register(struct platform_device *pdev,
 
 	for (int i = 0; i < num_clocks; i++) {
 		struct clk_hw **hw = &pdata->hw_data->hws[i];
-		if (h616_add_composite_clk(&pwmcc_data[i],
-						  pdata->reg,
-						  &pdata->lock, dev, hw))
-			dev_err(dev, "Can't register pwm clock %s\n",
-				pwmcc_data[i].name);
-	}
 
-	ret = of_clk_add_hw_provider(np, of_clk_hw_onecell_get,
-				     pdata->hw_data);
-	if (ret) {
-		dev_err(dev, "Error adding clock provider\n");
-		for (int i = 0; i < num_clocks; i++)
-			clk_hw_unregister(pdata->hw_data->hws[i]);
-		return ret;
+		ret = h616_add_composite_clk(&pwmcc_data[i], pdata->reg,
+					     &pdata->lock, dev, hw);
+		if (ret) {
+			dev_err_probe(dev, ret,
+				      "Failed to register hw clock %s\n",
+				      pwmcc_data[i].name);
+			for (i--; i >= 0; i--)
+				clk_hw_unregister(pdata->hw_data->hws[i]);
+			return ret;
+		}
 	}
 
 	pwm->clk_pdata = pdata;
 
-	return num_clocks;
+	return 0;
 }
 
 static inline struct h616_pwm_chip *to_h616_pwm_chip(struct pwm_chip *chip)
@@ -619,30 +616,21 @@ static int h616_pwm_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, PTR_ERR(pwm->bus_clk),
 				     "Failed to get bus clock\n");
 
-	ret = h616_pwmcc_register(pdev, pwm);
-	printk(" h616_pwmcc_register return %d\n", ret);
-
+	ret = h616_pwm_init_clocks(pdev, pwm);
+	if (ret)
+		return ret;
 
 	pwm->pwm_clocks = devm_kmalloc_array(dev, data->npwm,
 					     sizeof(*(pwm->pwm_clocks)),
 					     GFP_KERNEL);
-
-#if 0
-	for (int i = 1; i < data->npwm; i++) {
-		char *clk_name;
-
-		clk_name = devm_kasprintf(dev, GFP_KERNEL, "pwm-clk%d", i);
-		if (!clk_name)
-			return -ENOMEM;
-
-		pwm->pwm_clocks[i] = devm_clk_get(dev, clk_name);
-		if (IS_ERR(pwm->pwm_clocks[i])) {
+	for (int i = 0; i < data->npwm; i++) {
+		struct clk_hw **hw = &pwm->clk_pdata->hw_data->hws[i];
+		pwm->pwm_clocks[i] = devm_clk_hw_get_clk(dev, *hw, NULL);
+		if (IS_ERR(pwm->pwm_clocks[i]))
 			return dev_err_probe(dev, PTR_ERR(pwm->pwm_clocks[i]),
-					     "Failed to get %s clock\n", clk_name);
-		}
-		devm_kfree(dev, clk_name);
+					     "failed to register PWM clock %d%s\n", i);
 	}
-#endif
+
 	pwm->rst = devm_reset_control_get_shared(dev, NULL);
 	if (IS_ERR(pwm->rst))
 		return dev_err_probe(dev, PTR_ERR(pwm->rst),
