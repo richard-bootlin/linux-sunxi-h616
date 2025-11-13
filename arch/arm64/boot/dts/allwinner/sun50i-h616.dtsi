@@ -5,7 +5,6 @@
 
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/clock/sun50i-h616-ccu.h>
-#include <dt-bindings/clock/sun50i-h616-pwmcc.h>
 #include <dt-bindings/clock/sun50i-h6-r-ccu.h>
 #include <dt-bindings/clock/sun6i-rtc.h>
 #include <dt-bindings/reset/sun50i-h616-ccu.h>
@@ -236,24 +235,30 @@
 			interrupts = <GIC_SPI 50 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&osc24M>;
 		};
-
+#if 0
 		pwm: pwm@300a000 {
-			compatible = "allwinner,sun50i-h616-pwm";
+			compatible = "allwinner,sun50i-h616-pwm", "syscon";
 			reg = <0x0300a000 0x400>;
-			clocks = <&pwm_clocks 1>, <&pwm_clocks 2>,
-				 <&pwm_clocks 3>, <&pwm_clocks 4>,
-				 <&pwm_clocks 5>;
-			clock-names = "pwm1", "pwm2", "pwm3", "pwm4", "pwm5";
+			clocks = <&ccu CLK_BUS_PWM>, <&osc24M>, <&ccu CLK_APB1>, ;
+			clock-names = "bus", "hosc", "apb";
 			resets = <&ccu RST_BUS_PWM>;
+			allwinner,npwms = <6>;
 			status = "disabled";
 			#pwm-cells = <0x3>;
 		};
-
-		pwm_clocks: clock@300a000 {
-			compatible = "allwinner,sun50i-h616-pwmcc", "syscon";
-			reg = <0x300a000 0x400>;
-			clocks = <&ccu CLK_BUS_PWM>, <&osc24M>, <&ccu CLK_APB1>;
-			clock-names = "bus", "hosc", "apb";
+#endif
+		pwm: pwm@300a000 {
+			compatible = "allwinner,sun50i-h616-pwm";
+			reg = <0x0300a000 0x400>;
+			clocks = <&ccu CLK_BUS_PWM>, <&osc24M>, <&ccu CLK_APB1>,
+				 <&pwm 1>, <&pwm 2>,
+				 <&pwm 3>, <&pwm 4>,
+				 <&pwm 5>;
+			clock-names = "bus", "hosc", "apb",
+				"pwm-clk1", "pwm-clk2", "pwm-clk3", "pwm-clk4", "pwm-clk5";
+			resets = <&ccu RST_BUS_PWM>;
+			status = "disabled";
+			#pwm-cells = <0x3>;
 			#clock-cells = <1>;
 		};
 
