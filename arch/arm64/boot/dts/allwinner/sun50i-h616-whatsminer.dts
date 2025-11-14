@@ -98,12 +98,6 @@
 	vcc-ph-supply = <&reg_dldo1>;
 	vcc-pi-supply = <&reg_dldo1>;
 
-	pwm5_pin: pwm5-pin {
-		pins = "PA12";
-		function = "pwm5";
-		bias-pull-up;
-	};
-
 	rmii_pins: rmii-pins {
 		pins = "PA0", "PA1", "PA2", "PA3", "PA4",
 		       "PA5", "PA6", "PA7", "PA8", "PA9";
