@@ -574,13 +574,21 @@ printk("get rate=%llu\n", clk_get_rate(h616chip->pwm_clocks[pwm->hwpwm]));
 			dev_err(pwmchip_parent(chip), "failed to enable PWM clock\n");
 			return ret;
 		}
+
 	}
 
 	if (!state->enabled && cstate.enabled) {
 		clk_disable_unprepare(h616chip->pwm_clocks[pwm->hwpwm]);
-		return 0;
 	}
 
+	if (state->enabled != cstate.enabled) {
+		val = h616_pwm_readl(h616chip, PWM_ENR);
+		if (state->enabled)
+			val |= PWM_ENABLE(pwm->hwpwm);
+		else
+			val &= ~PWM_ENABLE(pwm->hwpwm);
+		h616_pwm_writel(h616chip, val, PWM_ENR);
+	}
 	return 0;
 }
 
