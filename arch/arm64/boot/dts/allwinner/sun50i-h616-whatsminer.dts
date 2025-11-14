@@ -126,6 +126,8 @@
 };
 
 &pwm {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pwm1_pin>;
 	status = "okay";
 };
 
