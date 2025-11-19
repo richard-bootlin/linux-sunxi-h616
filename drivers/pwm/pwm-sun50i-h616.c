@@ -19,6 +19,10 @@
 #include <linux/reset.h>
 #include <linux/io.h>
 
+#ifndef UINT32_MAX
+#define UINT32_MAX 0xffffffffU
+#endif
+
 /* PWM IRQ Enable Register */
 #define PWM_IER				0x0
 
@@ -136,6 +140,7 @@ struct clk_mux mux_xy_##_pair = {			\
 	.reg = (void *)_reg,				\
 	.shift = PWM_XY_CLK_CR_SRC_SHIFT,		\
 	.mask = PWM_XY_CLK_CR_SRC_MASK,			\
+	.flags = CLK_MUX_ROUND_CLOSEST,			\
 	.hw.init = &(struct clk_init_data){		\
 		.ops =  &clk_mux_ops,			\
 	}						\
@@ -156,6 +161,7 @@ struct clk_mux mux_x_##_idx = {				\
 	.reg = (void *)_reg,				\
 	.shift = PWM_XY_CLK_CR_BYPASS_BIT(_chan),	\
 	.mask = 1,					\
+	.flags = CLK_MUX_ROUND_CLOSEST,			\
 	.hw.init = &(struct clk_init_data){		\
 		.ops =  &clk_mux_ops,			\
 	}						\
@@ -210,7 +216,7 @@ struct clk_divider rate_x_##_idx = {			\
 		},							\
 		.num_parents = 2,					\
 		.mux_hw = &mux_x_##_idx.hw,				\
-		.flags = CLK_SET_RATE_PARENT,	\
+		.flags = CLK_SET_RATE_PARENT | CLK_GET_RATE_NOCACHE,	\
 	}
 
 /*
@@ -270,6 +276,8 @@ struct clk_pwm_pdata {
 	void __iomem *reg;
 };
 
+#define CLK_X_DIV_IDX(h616chip, ch) ((h616chip)->data->npwm + (ch >> 1))
+#define CLK_XY_SRC_IDX(h616chip, ch) ((h616chip)->data->npwm * 2 + (ch >> 1))
 static struct clk_pwm_data pwmcc_data[] = {
 	REF_CLK_X(0, 01),
 	REF_CLK_X(1, 01),
@@ -429,6 +437,29 @@ static inline void h616_pwm_writel(struct h616_pwm_chip *h616chip,
 	writel(val, h616chip->base + offset);
 }
 
+static int h616_pwm_set_bypass(struct pwm_chip *chip, unsigned int idx,
+			       bool en_bypass)
+{
+	struct h616_pwm_chip *h616chip = to_h616_pwm_chip(chip);
+	struct h616_pwm_channel *chan = &h616chip->channels[idx];
+	struct clk_hw_onecell_data *hw_data = h616chip->clk_pdata->hw_data;
+	struct clk *current_parent_clk;
+	struct clk *bypass_clk, *div_clk;
+
+	bypass_clk = hw_data->hws[CLK_XY_SRC_IDX(h616chip, idx)]->clk;
+	div_clk = hw_data->hws[CLK_X_DIV_IDX(h616chip, idx)]->clk;
+
+	current_parent_clk = clk_get_parent(chan->pwm_clk);
+
+	if (en_bypass && (bypass_clk != current_parent_clk))
+		return clk_set_parent(chan->pwm_clk, bypass_clk);
+
+	if (!en_bypass && (bypass_clk == current_parent_clk))
+		return clk_set_parent(chan->pwm_clk, div_clk);
+
+	return 0;
+}
+
 static int h616_pwm_request(struct pwm_chip *chip, struct pwm_device *pwm)
 {
 	struct h616_pwm_chip *h616chip = to_h616_pwm_chip(chip);
@@ -503,34 +534,6 @@ printk("%s duty=%llu period=%llu rate=%llu\n", __func__, state->duty_cycle,
 	return 0;
 }
 
-static int h616_pwm_calculate(struct pwm_chip *chip, unsigned int idx,
-			      const struct pwm_state *state, u32 *dty, u32 *prd)
-{
-	struct h616_pwm_chip *h616chip = to_h616_pwm_chip(chip);
-	struct h616_pwm_channel *chan = &h616chip->channels[idx];
-	u64 clk_rate, cycles = 0;
-
-	clk_rate = clk_get_rate(chan->pwm_clk);
-
-	dev_dbg(pwmchip_parent(chip), "[%u] actual clk_rate=%llu period=%llu duty=%llu\n",
-		idx, clk_rate, state->period, state->duty_cycle);
-
-	if (state->enabled && (state->period * clk_rate >= 2 * NSEC_PER_SEC))
-		return -EINVAL;
-
-	cycles = clk_rate * state->period + NSEC_PER_SEC / 2;
-	do_div(cycles, NSEC_PER_SEC);
-	if (cycles - 1 > PWM_PRD_MASK)
-		return -EINVAL;
-
-	*prd = cycles;
-	cycles *= state->duty_cycle;
-	do_div(cycles, state->period);
-	*dty = cycles;
-
-	return 0;
-}
-
 static int h616_pwm_calc(struct pwm_chip *chip, unsigned int idx,
 			 const struct pwm_state *state)
 {
@@ -538,24 +541,46 @@ static int h616_pwm_calc(struct pwm_chip *chip, unsigned int idx,
 	struct h616_pwm_channel *chan = &h616chip->channels[idx];
 	unsigned int cnt, duty_cnt;
 	long fin_freq;
-	u64 duty, period, freq;
+	u64 duty, period, freq, fin_period;
 
+	unsigned long max_rate;
 	duty = state->duty_cycle;
 	period = state->period;
 
-	/* TODO: bypass */
+	max_rate = clk_round_rate(chan->pwm_clk, UINT32_MAX);
 
-	freq = div64_u64(NSEC_PER_SEC * 0xffffULL, period);
-	if (freq > ULONG_MAX)
-		freq = ULONG_MAX;
+	if ((period * max_rate >= NSEC_PER_SEC) &&
+	    (period * max_rate < 2* NSEC_PER_SEC) &&
+	    (duty * max_rate * 2 >= NSEC_PER_SEC)) {
+		dev_dbg(pwmchip_parent(chip), "Setting bypass (period=%lld)\n",
+			period);
+		freq = div64_u64(NSEC_PER_SEC, period);
+		chan->bypass = true;
+		duty = period / 2;
+	} else if (period == 41) {
+		freq = 24000000;
+		chan->bypass = true;
+		duty = period / 2;
+
+	} else {
+		dev_dbg(pwmchip_parent(chip), "Unsetting bypass (period=%lld)\n",
+			period);
+		chan->bypass = false;
+
+		freq = div64_u64(NSEC_PER_SEC * 0xffffULL, period);
+		if (freq > UINT32_MAX)
+			freq = UINT32_MAX;
+	}
 
 	fin_freq = clk_round_rate(chan->pwm_clk, freq);
-	printk("clk_round_rate from %lld = %ld\n", freq, fin_freq);
+	printk("clk_round_rate from %llu = %ld\n", freq, fin_freq);
 	if (fin_freq <= 0) {
 		dev_err(pwmchip_parent(chip),
 			"invalid source clock frequency %llu\n", freq);
 		return fin_freq ? fin_freq : -EINVAL;
 	}
+
+	fin_period = div64_u64(NSEC_PER_SEC, fin_freq);
 
 	dev_dbg(pwmchip_parent(chip), "fin_freq: %ld Hz\n", fin_freq);
 
@@ -611,15 +636,13 @@ static int h616_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 		return ret;
 	}
 
-	val = h616_pwm_readl(h616chip, PWM_XY_CLK_CR(pwm->hwpwm >> 2));
-	printk("val reg 0x%x =%x\n", PWM_XY_CLK_CR(pwm->hwpwm >> 2), val);
-	bypass = !! (val & BIT(PWM_XY_CLK_CR_BYPASS_BIT(pwm->hwpwm)));
+	h616_pwm_set_bypass(chip, pwm->hwpwm, chan->bypass);
 
 	/*
 	 * If bypass is set, the PWM logic (polarity, duty) can't be applied
 	 */
 
-	if (bypass && (state->polarity == PWM_POLARITY_INVERSED)) {
+	if (chan->bypass && (state->polarity == PWM_POLARITY_INVERSED)) {
 		dev_warn(pwmchip_parent(chip),
 			 "Can't set inversed polarity with bypass enabled\n");
 	} else {
@@ -630,10 +653,11 @@ static int h616_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 		h616_pwm_writel(h616chip, val, PWM_CTRL_REG(pwm->hwpwm));
 	}
 
-	if (bypass && (state->duty_cycle * 2 != state->period)) {
+	if (chan->bypass && (state->duty_cycle * 2 != state->period)) {
 		dev_warn(pwmchip_parent(chip),
 			 "Can't set a duty cycle with bypass enabled\n");
-	} else {
+	}
+	if (!chan->bypass) {
 		if (chan->entire_cycles == 0) {
 			dev_warn(pwmchip_parent(chip), "entire_cycles==0 !!!\n");
 			chan->entire_cycles++;
@@ -641,19 +665,7 @@ static int h616_pwm_apply(struct pwm_chip *chip, struct pwm_device *pwm,
 		val = FIELD_PREP(PWM_DTY_MASK, chan->active_cycles);
 		val |= FIELD_PREP(PWM_PRD_MASK, chan->entire_cycles - 1);
 		printk("write=0x%x ch=%d\n", val, pwm->hwpwm);
-	h616_pwm_writel(h616chip, val, PWM_PRD_REG(pwm->hwpwm));
-#if 0
-
-	duty = state->duty * rate
-duty: state->duty * fq clock / Nsec_per_sec
-period: fq clock * state->period / Nsec_per_sec
-	tmp = NSEC_PER_SEC * PWM_REG_DTY(val);
-	state->duty_cycle = DIV_ROUND_CLOSEST_ULL(tmp, clk_rate);
-
-	tmp = NSEC_PER_SEC * PWM_REG_PRD(val);
-	state->period = DIV_ROUND_CLOSEST_ULL(tmp, clk_rate);
-
-#endif
+		h616_pwm_writel(h616chip, val, PWM_PRD_REG(pwm->hwpwm));
 	}
 
 printk("%s duty=%llu period=%llu rate=%llu\n", __func__, state->duty_cycle,
