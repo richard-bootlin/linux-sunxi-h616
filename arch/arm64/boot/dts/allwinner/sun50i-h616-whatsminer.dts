@@ -35,33 +35,7 @@
 	};
 };
 
-&{/soc} {
-	emac1: ethernet@5030000 {
-		compatible = "allwinner,sun50i-h616-emac1";
-		reg = <0x05030000 0x10000>;
-		interrupts = <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>;
-		interrupt-names = "macirq";
-		resets = <&ccu RST_BUS_EMAC1>;
-		reset-names = "stmmaceth";
-		clocks = <&ccu CLK_BUS_EMAC1>;
-		clock-names = "stmmaceth";
-		syscon = <&syscon 1>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&rmii_pins>;
-		phy-mode = "rmii";
-		status = "disabled";
-
-		mdio1: mdio {
-			compatible = "snps,dwmac-mdio";
-			#address-cells = <1>;
-			#size-cells = <0>;
-		};
-	};
-};
-
 &emac1 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&rmii_pins>;
 	phy-handle = <&ac300_ephy>;
 	phy-supply = <&reg_dldo1>;
 	allwinner,ac300-config = <&ac300_config>;
@@ -104,13 +78,6 @@
 	vcc-pg-supply = <&reg_aldo1>;
 	vcc-ph-supply = <&reg_dldo1>;
 	vcc-pi-supply = <&reg_dldo1>;
-
-	rmii_pins: rmii-pins {
-		pins = "PA0", "PA1", "PA2", "PA3", "PA4",
-		       "PA5", "PA6", "PA7", "PA8", "PA9";
-		function = "emac1";
-		drive-strength = <40>;
-	};
 
 	i2c3_pa_pins: i2c3-pa-pins {
 		pins = "PA10", "PA11";
