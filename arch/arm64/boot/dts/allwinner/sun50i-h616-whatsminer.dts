@@ -185,54 +185,6 @@
 		nand-ecc-strength = <8>;
 		nand-ecc-step-size = <512>;
 		nand-ecc-maximize;
-
-		partitions {
-			compatible = "fixed-partitions";
-			#address-cells = <1>;
-			#size-cells = <1>;
-
-			partition@0 {
-				label = "spl-0";
-				reg = <0x000000 0x040000>;
-				read-only;
-			};
-
-			partition@1 {
-				label = "spl-1";
-				reg = <0x040000 0x040000>;
-				read-only;
-			};
-
-			partition@2 {
-				label = "spl-2";
-				reg = <0x080000 0x040000>;
-				read-only;
-			};
-
-			partition@3 {
-				label = "spl-3";
-				reg = <0x0c0000 0x040000>;
-				read-only;
-			};
-
-			partition@4 {
-				label = "uboot";
-				reg = <0x100000 0x400000>;
-				read-only;
-			};
-
-			partition@5 {
-				label = "secure_storage";
-				reg = <0x500000 0x040000>;
-				read-only;
-			};
-
-			partition@6 {
-				label = "ubi";
-				reg = <0x540000 0xfac0000>;
-				read-only;
-			};
-		};
 	};
 };
 
