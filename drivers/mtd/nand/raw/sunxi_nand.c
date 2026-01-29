@@ -217,7 +217,7 @@
  * On A10/A23, this is the size of the NDFC User Data Register, containing the
  * mandatory user data bytes following the ECC for each ECC step.
  * Thus, for each ECC step, we need the ECC bytes + USER_DATA_SZ.
- * Those bits are currently unsused, and kept as default value 0xffffffff.
+ * Those bits are currently unused, and kept as default value 0xffffffff.
  *
  * On H6/H616, this size became configurable, from 0 bytes to 32, via the
  * USER_DATA_LEN registers.
