@@ -176,15 +176,13 @@
 		/* TC58NVG1SHTA00 */
 		reg = <0>;
 		allwinner,rb = <0>;
-		/* let's try with none first */
 		nand-ecc-mode = "hw";
 		/*
 		 * This nand requires only 8 bits per 512b
 		 * but if we can correct more, let's do it
 		 */
-		nand-ecc-strength = <8>;
-		nand-ecc-step-size = <512>;
-		nand-ecc-maximize;
+		nand-ecc-strength = <32>;
+		nand-ecc-step-size = <1024>;
 	};
 };
 
