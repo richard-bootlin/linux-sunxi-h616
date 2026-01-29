@@ -266,6 +266,10 @@ static inline struct sunxi_nand_chip *to_sunxi_nand(struct nand_chip *nand)
  * @has_mbus_clk:	If the controller needs a mbus clock.
  * @legacy_max_strength:If the maximize strength function was off by 2 bytes
  *			NB: this should not be used in new controllers
+ * @no_descramble_bbm	Don't unscramble the BBM before writing
+ *			NB: the block will appear as bad when it's read without
+ *			scrambling enabled (This only has an effect when
+ *			NAND_NEED_SCRAMBLING is set)
  * @reg_io_data:	I/O data register
  * @reg_ecc_err_cnt:	ECC error counter register
  * @reg_user_data:	User data register
@@ -297,6 +301,7 @@ struct sunxi_nfc_caps {
 	bool has_ecc_clk;
 	bool has_mbus_clk;
 	bool legacy_max_strength;
+	bool no_descramble_bbm;
 	unsigned int reg_io_data;
 	unsigned int reg_ecc_err_cnt;
 	unsigned int reg_user_data;
@@ -851,7 +856,8 @@ static void sunxi_nfc_hw_ecc_get_prot_oob_bytes(struct nand_chip *nand, u8 *oob,
 	}
 
 	/* De-randomize the Bad Block Marker. */
-	if (bbm && (nand->options & NAND_NEED_SCRAMBLING))
+	if (bbm && (nand->options & NAND_NEED_SCRAMBLING) &&
+	    !nfc->caps->no_descramble_bbm)
 		sunxi_nfc_randomize_bbm(nand, page, oob);
 }
 
@@ -911,7 +917,8 @@ static void sunxi_nfc_hw_ecc_set_prot_oob_bytes(struct nand_chip *nand,
 	u8 *user_data = NULL;
 
 	/* Randomize the Bad Block Marker. */
-	if (bbm && (nand->options & NAND_NEED_SCRAMBLING)) {
+	if (bbm && (nand->options & NAND_NEED_SCRAMBLING) &&
+	    !nfc->caps->no_descramble_bbm) {
 		user_data = kmalloc(user_data_sz, GFP_KERNEL);
 		memcpy(user_data, oob, user_data_sz);
 		sunxi_nfc_randomize_bbm(nand, page, user_data);
@@ -2569,6 +2576,7 @@ static const struct sunxi_nfc_caps sunxi_nfc_a23_caps = {
 static const struct sunxi_nfc_caps sunxi_nfc_h616_caps = {
 	.has_ecc_clk = true,
 	.has_mbus_clk = true,
+	.no_descramble_bbm = true,
 	.reg_io_data = NFC_REG_A23_IO_DATA,
 	.reg_ecc_err_cnt = NFC_REG_H6_ECC_ERR_CNT,
 	.reg_user_data = NFC_REG_H6_USER_DATA,
