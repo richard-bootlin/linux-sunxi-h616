@@ -213,17 +213,6 @@
 
 #define NFC_MAX_CS		7
 
-/*
- * On A10/A23, this is the size of the NDFC User Data Register, containing the
- * mandatory user data bytes following the ECC for each ECC step.
- * Thus, for each ECC step, we need the ECC bytes + USER_DATA_SZ.
- * Those bits are currently unused, and kept as default value 0xffffffff.
- *
- * On H6/H616, this size became configurable, from 0 bytes to 32, via the
- * USER_DATA_LEN registers.
- */
-#define USER_DATA_SZ 4
-
 /**
  * struct sunxi_nand_chip_sel - stores information related to NAND Chip Select
  *
@@ -304,6 +293,7 @@ static inline struct sunxi_nand_chip *to_sunxi_nand(struct nand_chip *nand)
  *			bytes to write
  * @nuser_data_tab:	Size of @user_data_len_tab
  * @sram_size:		Size of the NAND controller SRAM
+ * @user_data_len	User data len vendor specific function
  */
 struct sunxi_nfc_caps {
 	bool has_mdma;
@@ -329,6 +319,7 @@ struct sunxi_nfc_caps {
 	unsigned int nuser_data_tab;
 	unsigned int max_ecc_steps;
 	int sram_size;
+	unsigned int (*user_data_len)(int);
 };
 
 /**
@@ -890,17 +881,23 @@ static void sunxi_nfc_hw_ecc_set_prot_oob_bytes(struct nand_chip *nand,
 						bool bbm, int page)
 {
 	struct sunxi_nfc *nfc = to_sunxi_nfc(nand->controller);
-	u8 user_data[USER_DATA_SZ];
+	unsigned int user_data_sz = nfc->caps->user_data_len(step);
+	u8 *user_data = NULL;
 
 	/* Randomize the Bad Block Marker. */
 	if (bbm && (nand->options & NAND_NEED_SCRAMBLING)) {
-		memcpy(user_data, oob, sizeof(user_data));
+		user_data = kmalloc(user_data_sz, GFP_KERNEL);
+
+		memcpy(user_data, oob, user_data_sz);
 		sunxi_nfc_randomize_bbm(nand, page, user_data);
 		oob = user_data;
 	}
 
 	writel(sunxi_nfc_buf_to_user_data(oob),
 	       nfc->regs + NFC_REG_USER_DATA(nfc, step));
+
+	if (user_data)
+		kfree(user_data);
 }
 
 static void sunxi_nfc_hw_ecc_update_stats(struct nand_chip *nand,
@@ -921,6 +918,7 @@ static int sunxi_nfc_hw_ecc_correct(struct nand_chip *nand, u8 *data, u8 *oob,
 				    bool *erased)
 {
 	struct sunxi_nfc *nfc = to_sunxi_nfc(nand->controller);
+	unsigned int user_data_sz = nfc->caps->user_data_len(step);
 	struct nand_ecc_ctrl *ecc = &nand->ecc;
 	u32 tmp;
 
@@ -943,7 +941,7 @@ static int sunxi_nfc_hw_ecc_correct(struct nand_chip *nand, u8 *data, u8 *oob,
 			memset(data, pattern, ecc->size);
 
 		if (oob)
-			memset(oob, pattern, ecc->bytes + USER_DATA_SZ);
+			memset(oob, pattern, ecc->bytes + user_data_sz);
 
 		return 0;
 	}
@@ -962,6 +960,8 @@ static int sunxi_nfc_hw_ecc_read_chunk(struct nand_chip *nand,
 {
 	struct sunxi_nfc *nfc = to_sunxi_nfc(nand->controller);
 	struct nand_ecc_ctrl *ecc = &nand->ecc;
+	int step = data_off / ecc->size;
+	unsigned int user_data_sz = nfc->caps->user_data_len(step);
 	int raw_mode = 0;
 	u32 pattern_found;
 	bool erased;
@@ -980,7 +980,8 @@ static int sunxi_nfc_hw_ecc_read_chunk(struct nand_chip *nand,
 		return ret;
 
 	sunxi_nfc_reset_user_data_len(nfc);
-	sunxi_nfc_set_user_data_len(nfc, USER_DATA_SZ, 0);
+	// TODO step was force 0 here
+	sunxi_nfc_set_user_data_len(nfc, user_data_sz, step);
 	sunxi_nfc_randomizer_config(nand, page, false);
 	sunxi_nfc_randomizer_enable(nand);
 	writel(NFC_DATA_TRANS | NFC_DATA_SWAP_METHOD | NFC_ECC_OP,
@@ -991,13 +992,14 @@ static int sunxi_nfc_hw_ecc_read_chunk(struct nand_chip *nand,
 	if (ret)
 		return ret;
 
-	*cur_off = oob_off + ecc->bytes + USER_DATA_SZ;
+	*cur_off = oob_off + ecc->bytes + user_data_sz;
 
 	pattern_found = readl(nfc->regs + nfc->caps->reg_pat_found);
 	pattern_found = field_get(NFC_ECC_PAT_FOUND_MSK(nfc), pattern_found);
 
-	ret = sunxi_nfc_hw_ecc_correct(nand, data, oob_required ? oob : NULL, 0,
-				       readl(nfc->regs + NFC_REG_ECC_ST),
+	// TODO: step was forced 0 here.
+	ret = sunxi_nfc_hw_ecc_correct(nand, data, oob_required ? oob : NULL,
+				       step, readl(nfc->regs + NFC_REG_ECC_ST),
 				       pattern_found,
 				       &erased);
 	if (erased)
@@ -1016,10 +1018,10 @@ static int sunxi_nfc_hw_ecc_read_chunk(struct nand_chip *nand,
 				      ecc->size);
 
 		nand_change_read_column_op(nand, oob_off, oob,
-					   ecc->bytes + USER_DATA_SZ, false);
+					   ecc->bytes + user_data_sz, false);
 
 		ret = nand_check_erased_ecc_chunk(data,	ecc->size, oob,
-						  ecc->bytes + USER_DATA_SZ,
+						  ecc->bytes + user_data_sz,
 						  NULL, 0, ecc->strength);
 		if (ret >= 0)
 			raw_mode = 1;
@@ -1029,10 +1031,12 @@ static int sunxi_nfc_hw_ecc_read_chunk(struct nand_chip *nand,
 		if (oob_required) {
 			nand_change_read_column_op(nand, oob_off, NULL, 0,
 						   false);
-			sunxi_nfc_randomizer_read_buf(nand, oob, ecc->bytes + USER_DATA_SZ,
+			sunxi_nfc_randomizer_read_buf(nand, oob,
+						      ecc->bytes + user_data_sz,
 						      true, page);
 
-			sunxi_nfc_hw_ecc_get_prot_oob_bytes(nand, oob, 0,
+			// TODO: step was forced 0 here.
+			sunxi_nfc_hw_ecc_get_prot_oob_bytes(nand, oob, step,
 							    bbm, page);
 		}
 	}
@@ -1068,6 +1072,18 @@ static void sunxi_nfc_hw_ecc_read_extra_oob(struct nand_chip *nand,
 		*cur_off = mtd->oobsize + mtd->writesize;
 }
 
+static int sunxi_get_ecc_offset(struct sunxi_nfc *nfc,
+				struct nand_ecc_ctrl *ecc, int step)
+{
+	int ecc_off = step * ecc->bytes;
+	int i;
+
+	for (i = 0; i < step; i++)
+		ecc_off += nfc->caps->user_data_len(i);
+
+	return ecc_off;
+}
+
 static int sunxi_nfc_hw_ecc_read_chunks_dma(struct nand_chip *nand, uint8_t *buf,
 					    int oob_required, int page,
 					    int nchunks)
@@ -1092,7 +1108,7 @@ static int sunxi_nfc_hw_ecc_read_chunks_dma(struct nand_chip *nand, uint8_t *buf
 
 	sunxi_nfc_hw_ecc_enable(nand);
 	sunxi_nfc_reset_user_data_len(nfc);
-	sunxi_nfc_set_user_data_len(nfc, USER_DATA_SZ, 0);
+	sunxi_nfc_set_user_data_len(nfc, nfc->caps->user_data_len(0), 0);
 	sunxi_nfc_randomizer_config(nand, page, false);
 	sunxi_nfc_randomizer_enable(nand);
 
@@ -1127,7 +1143,8 @@ static int sunxi_nfc_hw_ecc_read_chunks_dma(struct nand_chip *nand, uint8_t *buf
 
 	for (i = 0; i < nchunks; i++) {
 		int data_off = i * ecc->size;
-		int oob_off = i * (ecc->bytes + USER_DATA_SZ);
+		unsigned int user_data_sz = nfc->caps->user_data_len(i);
+		int oob_off = sunxi_get_ecc_offset(nfc, ecc, i);
 		u8 *data = buf + data_off;
 		u8 *oob = nand->oob_poi + oob_off;
 		bool erased;
@@ -1145,7 +1162,7 @@ static int sunxi_nfc_hw_ecc_read_chunks_dma(struct nand_chip *nand, uint8_t *buf
 			/* TODO: use DMA to retrieve OOB */
 			nand_change_read_column_op(nand,
 						   mtd->writesize + oob_off,
-						   oob, ecc->bytes + USER_DATA_SZ, false);
+						   oob, ecc->bytes + user_data_sz, false);
 
 			sunxi_nfc_hw_ecc_get_prot_oob_bytes(nand, oob, i,
 							    !i, page);
@@ -1160,7 +1177,8 @@ static int sunxi_nfc_hw_ecc_read_chunks_dma(struct nand_chip *nand, uint8_t *buf
 	if (status & NFC_ECC_ERR_MSK(nfc)) {
 		for (i = 0; i < nchunks; i++) {
 			int data_off = i * ecc->size;
-			int oob_off = i * (ecc->bytes + USER_DATA_SZ);
+			unsigned int user_data_sz = nfc->caps->user_data_len(i);
+			int oob_off = sunxi_get_ecc_offset(nfc, ecc, i);
 			u8 *data = buf + data_off;
 			u8 *oob = nand->oob_poi + oob_off;
 
@@ -1180,10 +1198,10 @@ static int sunxi_nfc_hw_ecc_read_chunks_dma(struct nand_chip *nand, uint8_t *buf
 			/* TODO: use DMA to retrieve OOB */
 			nand_change_read_column_op(nand,
 						   mtd->writesize + oob_off,
-						   oob, ecc->bytes + USER_DATA_SZ, false);
+						   oob, ecc->bytes + user_data_sz, false);
 
 			ret = nand_check_erased_ecc_chunk(data,	ecc->size, oob,
-							  ecc->bytes + USER_DATA_SZ,
+							  ecc->bytes + user_data_sz,
 							  NULL, 0,
 							  ecc->strength);
 			if (ret >= 0)
@@ -1209,6 +1227,8 @@ static int sunxi_nfc_hw_ecc_write_chunk(struct nand_chip *nand,
 {
 	struct sunxi_nfc *nfc = to_sunxi_nfc(nand->controller);
 	struct nand_ecc_ctrl *ecc = &nand->ecc;
+	int step = data_off / ecc->size;
+	unsigned int user_data_sz = nfc->caps->user_data_len(step);
 	int ret;
 
 	if (data_off != *cur_off)
@@ -1226,8 +1246,10 @@ static int sunxi_nfc_hw_ecc_write_chunk(struct nand_chip *nand,
 	sunxi_nfc_randomizer_config(nand, page, false);
 	sunxi_nfc_randomizer_enable(nand);
 	sunxi_nfc_reset_user_data_len(nfc);
-	sunxi_nfc_set_user_data_len(nfc, USER_DATA_SZ, 0);
-	sunxi_nfc_hw_ecc_set_prot_oob_bytes(nand, oob, 0, bbm, page);
+	// TODO: Why this step was forced 0 ?
+	sunxi_nfc_set_user_data_len(nfc, user_data_sz, step);
+	// TODO: Why this step was forced 0 ?
+	sunxi_nfc_hw_ecc_set_prot_oob_bytes(nand, oob, step, bbm, page);
 
 	writel(NFC_DATA_TRANS | NFC_DATA_SWAP_METHOD |
 	       NFC_ACCESS_DIR | NFC_ECC_OP,
@@ -1238,7 +1260,7 @@ static int sunxi_nfc_hw_ecc_write_chunk(struct nand_chip *nand,
 	if (ret)
 		return ret;
 
-	*cur_off = oob_off + ecc->bytes + USER_DATA_SZ;
+	*cur_off = oob_off + ecc->bytes + user_data_sz;
 
 	return 0;
 }
@@ -1249,7 +1271,8 @@ static void sunxi_nfc_hw_ecc_write_extra_oob(struct nand_chip *nand,
 {
 	struct mtd_info *mtd = nand_to_mtd(nand);
 	struct nand_ecc_ctrl *ecc = &nand->ecc;
-	int offset = ((ecc->bytes + USER_DATA_SZ) * ecc->steps);
+	struct sunxi_nfc *nfc = to_sunxi_nfc(nand->controller);
+	int offset = sunxi_get_ecc_offset(nfc, ecc, ecc->steps);
 	int len = mtd->oobsize - offset;
 
 	if (len <= 0)
@@ -1269,6 +1292,7 @@ static int sunxi_nfc_hw_ecc_read_page(struct nand_chip *nand, uint8_t *buf,
 				      int oob_required, int page)
 {
 	struct mtd_info *mtd = nand_to_mtd(nand);
+	struct sunxi_nfc *nfc = to_sunxi_nfc(nand->controller);
 	struct nand_ecc_ctrl *ecc = &nand->ecc;
 	unsigned int max_bitflips = 0;
 	int ret, i, cur_off = 0;
@@ -1282,7 +1306,7 @@ static int sunxi_nfc_hw_ecc_read_page(struct nand_chip *nand, uint8_t *buf,
 
 	for (i = 0; i < ecc->steps; i++) {
 		int data_off = i * ecc->size;
-		int oob_off = i * (ecc->bytes + USER_DATA_SZ);
+		int oob_off = sunxi_get_ecc_offset(nfc, ecc, i);
 		u8 *data = buf + data_off;
 		u8 *oob = nand->oob_poi + oob_off;
 
@@ -1328,6 +1352,7 @@ static int sunxi_nfc_hw_ecc_read_subpage(struct nand_chip *nand,
 					 u8 *bufpoi, int page)
 {
 	struct mtd_info *mtd = nand_to_mtd(nand);
+	struct sunxi_nfc *nfc = to_sunxi_nfc(nand->controller);
 	struct nand_ecc_ctrl *ecc = &nand->ecc;
 	int ret, i, cur_off = 0;
 	unsigned int max_bitflips = 0;
@@ -1341,7 +1366,7 @@ static int sunxi_nfc_hw_ecc_read_subpage(struct nand_chip *nand,
 	for (i = data_offs / ecc->size;
 	     i < DIV_ROUND_UP(data_offs + readlen, ecc->size); i++) {
 		int data_off = i * ecc->size;
-		int oob_off = i * (ecc->bytes + USER_DATA_SZ);
+		int oob_off = sunxi_get_ecc_offset(nfc, ecc, i);
 		u8 *data = bufpoi + data_off;
 		u8 *oob = nand->oob_poi + oob_off;
 
@@ -1384,6 +1409,7 @@ static int sunxi_nfc_hw_ecc_write_page(struct nand_chip *nand,
 				       int page)
 {
 	struct mtd_info *mtd = nand_to_mtd(nand);
+	struct sunxi_nfc *nfc = to_sunxi_nfc(nand->controller);
 	struct nand_ecc_ctrl *ecc = &nand->ecc;
 	int ret, i, cur_off = 0;
 
@@ -1395,7 +1421,7 @@ static int sunxi_nfc_hw_ecc_write_page(struct nand_chip *nand,
 
 	for (i = 0; i < ecc->steps; i++) {
 		int data_off = i * ecc->size;
-		int oob_off = i * (ecc->bytes + USER_DATA_SZ);
+		int oob_off = sunxi_get_ecc_offset(nfc, ecc, i);
 		const u8 *data = buf + data_off;
 		const u8 *oob = nand->oob_poi + oob_off;
 
@@ -1421,6 +1447,7 @@ static int sunxi_nfc_hw_ecc_write_subpage(struct nand_chip *nand,
 					  int page)
 {
 	struct mtd_info *mtd = nand_to_mtd(nand);
+	struct sunxi_nfc *nfc = to_sunxi_nfc(nand->controller);
 	struct nand_ecc_ctrl *ecc = &nand->ecc;
 	int ret, i, cur_off = 0;
 
@@ -1433,7 +1460,7 @@ static int sunxi_nfc_hw_ecc_write_subpage(struct nand_chip *nand,
 	for (i = data_offs / ecc->size;
 	     i < DIV_ROUND_UP(data_offs + data_len, ecc->size); i++) {
 		int data_off = i * ecc->size;
-		int oob_off = i * (ecc->bytes + USER_DATA_SZ);
+		int oob_off = sunxi_get_ecc_offset(nfc, ecc, i);
 		const u8 *data = buf + data_off;
 		const u8 *oob = nand->oob_poi + oob_off;
 
@@ -1473,10 +1500,12 @@ static int sunxi_nfc_hw_ecc_write_page_dma(struct nand_chip *nand,
 
 	sunxi_nfc_reset_user_data_len(nfc);
 	for (i = 0; i < ecc->steps; i++) {
-		const u8 *oob = nand->oob_poi + (i * (ecc->bytes + USER_DATA_SZ));
+		unsigned int user_data_sz = nfc->caps->user_data_len(i);
+		int oob_off = sunxi_get_ecc_offset(nfc, ecc, i);
+		const u8 *oob = nand->oob_poi + oob_off;
 
 		sunxi_nfc_hw_ecc_set_prot_oob_bytes(nand, oob, i, !i, page);
-		sunxi_nfc_set_user_data_len(nfc, USER_DATA_SZ, i);
+		sunxi_nfc_set_user_data_len(nfc, user_data_sz, i);
 	}
 
 	nand_prog_page_begin_op(nand, page, 0, NULL, 0);
@@ -1740,11 +1769,16 @@ static int sunxi_nand_ooblayout_ecc(struct mtd_info *mtd, int section,
 {
 	struct nand_chip *nand = mtd_to_nand(mtd);
 	struct nand_ecc_ctrl *ecc = &nand->ecc;
+	struct sunxi_nfc *nfc = to_sunxi_nfc(nand->controller);
+	unsigned int user_data_sz = nfc->caps->user_data_len(section);
 
 	if (section >= ecc->steps)
 		return -ERANGE;
 
-	oobregion->offset = section * (ecc->bytes + USER_DATA_SZ);
+	// TODO: I think the offset should be offset + user data
+	// because just offset is the BBM, and the user data bytes are
+	// at the beginning of the section.
+	oobregion->offset = sunxi_get_ecc_offset(nfc, ecc, section) + user_data_sz;
 	oobregion->length = ecc->bytes;
 
 	return 0;
@@ -1755,18 +1789,20 @@ static int sunxi_nand_ooblayout_free(struct mtd_info *mtd, int section,
 {
 	struct nand_chip *nand = mtd_to_nand(mtd);
 	struct nand_ecc_ctrl *ecc = &nand->ecc;
+	struct sunxi_nfc *nfc = to_sunxi_nfc(nand->controller);
+	unsigned int user_data_sz = nfc->caps->user_data_len(section);
 
 	if (section > ecc->steps)
 		return -ERANGE;
 
 	/*
 	 * The first 2 bytes are used for BB markers, hence we
-	 * only have USER_DATA_SZ - 2 bytes available in the first user data
+	 * only have user_data_sz - 2 bytes available in the first user data
 	 * section.
 	 */
 	if (!section && ecc->engine_type == NAND_ECC_ENGINE_TYPE_ON_HOST) {
 		oobregion->offset = 2;
-		oobregion->length = USER_DATA_SZ - 2;
+		oobregion->length = user_data_sz - 2;
 
 		return 0;
 	}
@@ -1778,10 +1814,11 @@ static int sunxi_nand_ooblayout_free(struct mtd_info *mtd, int section,
 	if (section == ecc->steps && ecc->engine_type == NAND_ECC_ENGINE_TYPE_ON_HOST)
 		return -ERANGE;
 
-	oobregion->offset = section * (ecc->bytes + USER_DATA_SZ);
+	/* The user data area is just before the ecc bytes */
+	oobregion->offset = sunxi_get_ecc_offset(nfc, ecc, section);
 
 	if (section < ecc->steps)
-		oobregion->length = USER_DATA_SZ;
+		oobregion->length = user_data_sz;
 	else
 		oobregion->length = mtd->oobsize - oobregion->offset;
 
@@ -1803,21 +1840,31 @@ static int sunxi_nand_hw_ecc_ctrl_init(struct nand_chip *nand,
 	struct mtd_info *mtd = nand_to_mtd(nand);
 	struct nand_device *nanddev = mtd_to_nanddev(mtd);
 	int nsectors;
+	int total_user_data_sz = 0;
 	int i;
+
+	ecc->size = 1024;
+	nsectors = mtd->writesize / ecc->size;
+
+	for (int i = 0; i < nsectors; i++)
+		total_user_data_sz += nfc->caps->user_data_len(i);
 
 	if (nanddev->ecc.user_conf.flags & NAND_ECC_MAXIMIZE_STRENGTH) {
 		int bytes;
 
-		ecc->size = 1024;
-		nsectors = mtd->writesize / ecc->size;
-
-		bytes = mtd->oobsize / nsectors;
+		bytes = mtd->oobsize;
 
 		/*
-		 * USER_DATA_SZ non-ECC bytes are added before each ECC bytes
+		 * user_data_sz non-ECC bytes are added before each ECC bytes
 		 * section, they contain the 2 bytes from BBM
 		 */
-		bytes -= USER_DATA_SZ;
+		bytes -= total_user_data_sz;
+
+		/*
+		 * Once all user data has been subtracted, the rest can be used
+		 * for ECC bytes
+		 */
+		bytes /= nsectors;
 
 		/* and bytes has to be even. */
 		if (bytes % 2)
@@ -1870,7 +1917,7 @@ static int sunxi_nand_hw_ecc_ctrl_init(struct nand_chip *nand,
 
 	nsectors = mtd->writesize / ecc->size;
 
-	if (mtd->oobsize < ((ecc->bytes + USER_DATA_SZ) * nsectors))
+	if (mtd->oobsize < (ecc->bytes * nsectors + total_user_data_sz))
 		return -EINVAL;
 
 	ecc->read_oob = sunxi_nfc_hw_ecc_read_oob;
@@ -2370,6 +2417,39 @@ static void sunxi_nfc_remove(struct platform_device *pdev)
 		dma_release_channel(nfc->dmac);
 }
 
+static unsigned int sunxi_user_data_len_vendor_h616(int step)
+{
+	/*
+	 * In vendor image, the user data len is 8 byte on step 0 (that
+	 * includes the BBM) and 0 bytes for the rest.
+	 * So the OOB layout is:
+	 * [BBM] [BBM] [6bytes USER_DATA_STEP0] [ECC_STEP0 bytes] [ECC_step1 bytes]...
+	 */
+	if (step == 0)
+		return 8;
+	return 0;
+}
+
+static unsigned int sunxi_user_data_len(int step)
+{
+	/*
+	 * On A10/A23, this is the size of the NDFC User Data Register,
+	 * containing the mandatory user data bytes following the ECC for each
+	 * ECC step.
+	 * Thus, for each ECC step, we need the ECC bytes + USER_DATA_SZ.
+	 * Those bits are currently unused, and kept as default value 0xffffffff.
+	 *
+	 * On H6/H616, this size became configurable, from 0 bytes to 32, via
+	 * the USER_DATA_LEN registers.
+	 * So the layout is:
+	 * [BBM] [BBM] [2Bytes USER_DATA_STEP0] [ECC_STEP0 bytes]
+	 * [4bytes USER_DATA_STEP1] [ECC_step1 bytes]...
+	 */
+
+	return 4;
+}
+
+
 static const u8 sunxi_ecc_strengths_a10[] = {
 	16, 24, 28, 32, 40, 48, 56, 60, 64
 };
@@ -2400,6 +2480,7 @@ static const struct sunxi_nfc_caps sunxi_nfc_a10_caps = {
 	.nstrengths = ARRAY_SIZE(sunxi_ecc_strengths_a10),
 	.max_ecc_steps = 16,
 	.sram_size = 1024,
+	.user_data_len = &sunxi_user_data_len,
 };
 
 static const struct sunxi_nfc_caps sunxi_nfc_a23_caps = {
@@ -2421,6 +2502,7 @@ static const struct sunxi_nfc_caps sunxi_nfc_a23_caps = {
 	.nstrengths = ARRAY_SIZE(sunxi_ecc_strengths_a10),
 	.max_ecc_steps = 16,
 	.sram_size = 1024,
+	.user_data_len = &sunxi_user_data_len,
 };
 
 static const struct sunxi_nfc_caps sunxi_nfc_h616_caps = {
@@ -2445,6 +2527,7 @@ static const struct sunxi_nfc_caps sunxi_nfc_h616_caps = {
 	.nuser_data_tab = ARRAY_SIZE(sunxi_user_data_len_h6),
 	.max_ecc_steps = 32,
 	.sram_size = 8192,
+	.user_data_len = &sunxi_user_data_len_vendor_h616,
 };
 
 static const struct of_device_id sunxi_nfc_ids[] = {
