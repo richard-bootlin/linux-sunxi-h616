@@ -270,6 +270,7 @@ static inline struct sunxi_nand_chip *to_sunxi_nand(struct nand_chip *nand)
  * @has_ecc_block_512:	If the ECC can handle 512B or only 1024B chuncks
  * @has_ecc_clk:	If the controller needs an ECC clock.
  * @has_mbus_clk:	If the controller needs a mbus clock.
+ * @no_scramble_bbm	Don't scramble the BBM even if NAND_NEED_SCRAMBLING is set
  * @reg_io_data:	I/O data register
  * @reg_ecc_err_cnt:	ECC error counter register
  * @reg_user_data:	User data register
@@ -293,13 +294,14 @@ static inline struct sunxi_nand_chip *to_sunxi_nand(struct nand_chip *nand)
  *			bytes to write
  * @nuser_data_tab:	Size of @user_data_len_tab
  * @sram_size:		Size of the NAND controller SRAM
- * @user_data_len	User data len vendor specific function
+ * @user_data_len	User data length vendor specific function
  */
 struct sunxi_nfc_caps {
 	bool has_mdma;
 	bool has_ecc_block_512;
 	bool has_ecc_clk;
 	bool has_mbus_clk;
+	bool no_scramble_bbm;
 	unsigned int reg_io_data;
 	unsigned int reg_ecc_err_cnt;
 	unsigned int reg_user_data;
@@ -825,7 +827,8 @@ static void sunxi_nfc_hw_ecc_get_prot_oob_bytes(struct nand_chip *nand, u8 *oob,
 	sunxi_nfc_user_data_to_buf(readl(nfc->regs + NFC_REG_USER_DATA(nfc, step)), oob);
 
 	/* De-randomize the Bad Block Marker. */
-	if (bbm && (nand->options & NAND_NEED_SCRAMBLING))
+	if (bbm && (nand->options & NAND_NEED_SCRAMBLING) &&
+	    !nfc->caps->no_scramble_bbm)
 		sunxi_nfc_randomize_bbm(nand, page, oob);
 }
 
@@ -885,7 +888,8 @@ static void sunxi_nfc_hw_ecc_set_prot_oob_bytes(struct nand_chip *nand,
 	u8 *user_data = NULL;
 
 	/* Randomize the Bad Block Marker. */
-	if (bbm && (nand->options & NAND_NEED_SCRAMBLING)) {
+	if (bbm && (nand->options & NAND_NEED_SCRAMBLING) &&
+	    !nfc->caps->no_scramble_bbm) {
 		user_data = kmalloc(user_data_sz, GFP_KERNEL);
 
 		memcpy(user_data, oob, user_data_sz);
@@ -2508,6 +2512,7 @@ static const struct sunxi_nfc_caps sunxi_nfc_a23_caps = {
 static const struct sunxi_nfc_caps sunxi_nfc_h616_caps = {
 	.has_ecc_clk = true,
 	.has_mbus_clk = true,
+	.no_scramble_bbm = true,
 	.reg_io_data = NFC_REG_A23_IO_DATA,
 	.reg_ecc_err_cnt = NFC_REG_H6_ECC_ERR_CNT,
 	.reg_user_data = NFC_REG_H6_USER_DATA,
