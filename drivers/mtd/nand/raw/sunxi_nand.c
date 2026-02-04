@@ -1094,7 +1094,7 @@ static int sunxi_nfc_hw_ecc_read_chunks_dma(struct nand_chip *nand, uint8_t *buf
 
 	sunxi_nfc_hw_ecc_enable(nand);
 	sunxi_nfc_reset_user_data_len(nfc);
-	for (i = 0; i < nchunks; i++) {
+	for (i = 0; i < nchunks; i++)
 		sunxi_nfc_set_user_data_len(nfc, USER_DATA_SZ, i);
 	sunxi_nfc_randomizer_config(nand, page, false);
 	sunxi_nfc_randomizer_enable(nand);
