@@ -1931,7 +1931,7 @@ static int sunxi_nand_attach_chip(struct nand_chip *nand)
 	int ret;
 
 	/* Force scrambling */
-	nand->options |= NAND_NEED_SCRAMBLING;
+//	nand->options |= NAND_NEED_SCRAMBLING;
 
 	if (nand->bbt_options & NAND_BBT_USE_FLASH)
 		nand->bbt_options |= NAND_BBT_NO_OOB;
