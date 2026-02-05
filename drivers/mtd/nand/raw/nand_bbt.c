@@ -495,6 +495,7 @@ static int create_bbt(struct nand_chip *this, uint8_t *buf,
 	int i, numblocks, startblock;
 	loff_t from;
 
+	return 0;
 	pr_info("Scanning device for bad blocks\n");
 
 	if (chip == -1) {
