@@ -997,8 +997,9 @@ static int sunxi_nfc_hw_ecc_read_chunk(struct nand_chip *nand,
 	pattern_found = readl(nfc->regs + nfc->caps->reg_pat_found);
 	pattern_found = field_get(NFC_ECC_PAT_FOUND_MSK(nfc), pattern_found);
 
+	/* For the controller point of view, we are at step 0 */
 	ret = sunxi_nfc_hw_ecc_correct(nand, data, oob_required ? oob : NULL,
-				       step, readl(nfc->regs + NFC_REG_ECC_ST),
+				       0, readl(nfc->regs + NFC_REG_ECC_ST),
 				       pattern_found, &erased);
 	if (erased)
 		return 1;
