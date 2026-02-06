@@ -1371,6 +1371,9 @@ static int sunxi_nfc_hw_ecc_read_page(struct nand_chip *nand, uint8_t *buf,
 
 	sunxi_nfc_hw_ecc_enable(nand);
 
+	if (oob_required)
+		memset(nand->oob_poi, 0xff, mtd->oobsize);
+
 	sunxi_nfc_reset_user_data_len(nfc);
 	for (i = 0; i < ecc->steps; i++) {
 		int data_off = i * ecc->size;
