@@ -79,6 +79,11 @@ patternProperties:
           minimum: 0
           maximum: 1
 
+      allwinner,scramble_bbm:
+        description:
+          Force the bad block marker to be scrambled, along with
+          the OOB.
+
     unevaluatedProperties: false
 
 required:
