@@ -176,6 +176,7 @@
 		/* TC58NVG1SHTA00 */
 		reg = <0>;
 		allwinner,rb = <0>;
+		allwinner,scramble_bbm;
 		nand-ecc-mode = "hw";
 		/*
 		 * This nand requires only 8 bits per 512b
